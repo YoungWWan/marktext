@@ -1,6 +1,6 @@
 import BaseFloat from '../baseFloat'
 import { patch, h } from '../../parser/render/snabbdom'
-import icons from './config'
+import { getIcons } from './config'
 
 import './index.css'
 
@@ -24,7 +24,6 @@ class FormatPicker extends BaseFloat {
     this.oldVnode = null
     this.formats = null
     this.options = opts
-    this.icons = icons
     const formatContainer = this.formatContainer = document.createElement('div')
     this.container.appendChild(formatContainer)
     this.floatBox.classList.add('ag-format-picker-container')
@@ -48,7 +47,8 @@ class FormatPicker extends BaseFloat {
   }
 
   render () {
-    const { icons, oldVnode, formatContainer, formats } = this
+    const { oldVnode, formatContainer, formats } = this
+    const icons = getIcons()
     const children = icons.map(i => {
       let icon
       let iconWrapperSelector

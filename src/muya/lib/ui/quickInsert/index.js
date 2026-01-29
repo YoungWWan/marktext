@@ -2,7 +2,7 @@ import { filter } from 'fuzzaldrin'
 import { patch, h } from '../../parser/render/snabbdom'
 import { deepCopy } from '../../utils'
 import BaseScrollFloat from '../baseScrollFloat'
-import { quickInsertObj } from './config'
+import { getQuickInsertObj, getQuickInsertText } from './config'
 import './index.css'
 
 class QuickInsert extends BaseScrollFloat {
@@ -17,7 +17,7 @@ class QuickInsert extends BaseScrollFloat {
     this.renderArray = null
     this.activeItem = null
     this.block = null
-    this.renderObj = quickInsertObj
+    this.renderObj = getQuickInsertObj()
     this.render()
     this.listen()
   }
@@ -79,7 +79,7 @@ class QuickInsert extends BaseScrollFloat {
       })
 
     if (children.length === 0) {
-      children = h('div.no-result', 'No result')
+      children = h('div.no-result', getQuickInsertText('noResult'))
     }
     const vnode = h('div', children)
 
@@ -108,9 +108,16 @@ class QuickInsert extends BaseScrollFloat {
   search (text) {
     const { contentState } = this.muya
     const canInserFrontMatter = contentState.canInserFrontMatter(this.block)
-    const obj = deepCopy(quickInsertObj)
-    if (!canInserFrontMatter) {
-      obj['basic block'].splice(2, 1)
+    const obj = deepCopy(getQuickInsertObj())
+    // Find the basic block key (could be translated)
+    const basicBlockKey = Object.keys(obj).find(key => {
+      return obj[key].some(item => item.label === 'paragraph')
+    })
+    if (!canInserFrontMatter && basicBlockKey) {
+      const frontMatterIndex = obj[basicBlockKey].findIndex(item => item.label === 'front-matter')
+      if (frontMatterIndex !== -1) {
+        obj[basicBlockKey].splice(frontMatterIndex, 1)
+      }
     }
     let result = obj
     if (text !== '') {

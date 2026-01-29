@@ -202,6 +202,15 @@ class EditorWindow extends BaseWindow {
 
     mainWindowState.manage(win)
 
+    // Restore fullscreen or maximized state after window is ready to show
+    win.once('ready-to-show', () => {
+      if (mainWindowState.isFullScreen) {
+        win.setFullScreen(true)
+      } else if (mainWindowState.isMaximized) {
+        win.maximize()
+      }
+    })
+
     // Disable application menu shortcuts because we want to handle key bindings ourself.
     win.webContents.setIgnoreMenuShortcuts(true)
 

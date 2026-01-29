@@ -3,35 +3,34 @@ import newIcon from '../../assets/pngicon/paragraph/2.png'
 import deleteIcon from '../../assets/pngicon/delete/2.png'
 import turnIcon from '../../assets/pngicon/turninto/2.png'
 import { isOsx } from '../../config'
-import { quickInsertObj } from '../quickInsert/config'
-
-const wholeSubMenu = Object.keys(quickInsertObj).reduce((acc, key) => {
-  const items = quickInsertObj[key]
-  return [...acc, ...items]
-}, [])
+import { getQuickInsertObj } from '../quickInsert/config'
+import { t } from '../i18n'
 
 const COMMAND_KEY = isOsx ? '⌘' : '⌃'
 
-export const menu = [{
+export const getMenu = () => [{
   icon: copyIcon,
   label: 'duplicate',
-  text: 'Duplicate',
+  text: t('duplicate'),
   shortCut: `⇧${COMMAND_KEY}P`
 }, {
   icon: turnIcon,
   label: 'turnInto',
-  text: 'Turn Into'
+  text: t('turnInto')
 }, {
   icon: newIcon,
   label: 'new',
-  text: 'New Paragraph',
+  text: t('newParagraph'),
   shortCut: `⇧${COMMAND_KEY}N`
 }, {
   icon: deleteIcon,
   label: 'delete',
-  text: 'Delete',
+  text: t('delete'),
   shortCut: `⇧${COMMAND_KEY}D`
 }]
+
+// For backward compatibility
+export const menu = getMenu()
 
 export const getLabel = block => {
   const { type, functionType, listType } = block
@@ -111,6 +110,12 @@ export const getLabel = block => {
 }
 
 export const getSubMenu = (block, startBlock, endBlock) => {
+  const quickInsertObj = getQuickInsertObj()
+  const wholeSubMenu = Object.keys(quickInsertObj).reduce((acc, key) => {
+    const items = quickInsertObj[key]
+    return [...acc, ...items]
+  }, [])
+
   const { type } = block
   switch (type) {
     case 'p': {

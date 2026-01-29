@@ -1,5 +1,6 @@
 import { ipcRenderer } from 'electron'
 import bus from '../bus'
+import { setLanguage } from '../lang'
 
 // user preference
 const state = {
@@ -105,6 +106,10 @@ const mutations = {
         state[key] = preference[key]
       }
     })
+    // Apply language setting
+    if (preference.language) {
+      setLanguage(preference.language)
+    }
   },
   SET_MODE (state, { type, checked }) {
     state[type] = checked

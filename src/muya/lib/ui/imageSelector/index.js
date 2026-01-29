@@ -4,6 +4,7 @@ import { patch, h } from '../../parser/render/snabbdom'
 import { EVENT_KEYS, URL_REG, isWin } from '../../config'
 import { getUniqueId, getImageInfo as getImageSrc } from '../../utils'
 import { getImageInfo } from '../../utils/getImageInfo'
+import { t } from '../i18n'
 
 import './index.css'
 
@@ -297,16 +298,16 @@ class ImageSelector extends BaseFloat {
 
   renderHeader () {
     const tabs = [{
-      label: 'Select',
+      label: t('select'),
       value: 'select'
     }, {
-      label: 'Embed link',
+      label: t('embedLink'),
       value: 'link'
     }]
 
     if (this.unsplash) {
       tabs.push({
-        label: 'Unsplash',
+        label: t('unsplash'),
         value: 'unsplash'
       })
     }
@@ -337,13 +338,13 @@ class ImageSelector extends BaseFloat {
               this.handleSelectButtonClick()
             }
           }
-        }, 'Choose an Image'),
-        h('span.description', 'Choose image from your computer.')
+        }, t('chooseImage')),
+        h('span.description', t('chooseImageDesc'))
       ]
     } else if (tab === 'link') {
       const altInput = h('input.alt', {
         props: {
-          placeholder: 'Alt text',
+          placeholder: t('altText'),
           value: alt
         },
         on: {
@@ -360,7 +361,7 @@ class ImageSelector extends BaseFloat {
       })
       const srcInput = h('input.src', {
         props: {
-          placeholder: 'Image link or local path',
+          placeholder: t('imageLinkOrPath'),
           value: src
         },
         on: {
@@ -380,7 +381,7 @@ class ImageSelector extends BaseFloat {
       })
       const titleInput = h('input.title', {
         props: {
-          placeholder: 'Image title',
+          placeholder: t('imageTitle'),
           value: title
         },
         on: {
@@ -421,7 +422,7 @@ class ImageSelector extends BaseFloat {
     } else {
       const searchInput = h('input.search', {
         props: {
-          placeholder: 'Search photos on Unsplash'
+          placeholder: t('searchUnsplash')
         },
         on: {
           keydown: (event) => {

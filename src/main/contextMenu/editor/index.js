@@ -1,18 +1,17 @@
 import { Menu, MenuItem } from 'electron'
 import {
-  CUT,
-  COPY,
-  PASTE,
-  COPY_AS_MARKDOWN,
-  COPY_AS_HTML,
-  PASTE_AS_PLAIN_TEXT,
+  getCut,
+  getCopy,
+  getPaste,
+  getCopyAsMarkdown,
+  getCopyAsHtml,
+  getPasteAsPlainText,
   SEPARATOR,
-  INSERT_BEFORE,
-  INSERT_AFTER
+  getInsertBefore,
+  getInsertAfter
 } from './menuItems'
 import spellcheckMenuBuilder from './spellcheck'
-
-const CONTEXT_ITEMS = [INSERT_BEFORE, INSERT_AFTER, SEPARATOR, CUT, COPY, PASTE, SEPARATOR, COPY_AS_MARKDOWN, COPY_AS_HTML, PASTE_AS_PLAIN_TEXT]
+import { t } from '../../lang'
 
 const isInsideEditor = params => {
   const { isEditable, editFlags, inputFieldType } = params
@@ -33,11 +32,23 @@ export const showEditorContextMenu = (win, event, params, isSpellcheckerEnabled)
     // const canPaste = hasText && editFlags.canPaste
     const isMisspelled = isEditable && !!selectionText && !!misspelledWord
 
+    // Get fresh translated menu items
+    const CUT = getCut()
+    const COPY = getCopy()
+    const PASTE = getPaste()
+    const COPY_AS_MARKDOWN = getCopyAsMarkdown()
+    const COPY_AS_HTML = getCopyAsHtml()
+    const PASTE_AS_PLAIN_TEXT = getPasteAsPlainText()
+    const INSERT_BEFORE = getInsertBefore()
+    const INSERT_AFTER = getInsertAfter()
+
+    const CONTEXT_ITEMS = [INSERT_BEFORE, INSERT_AFTER, SEPARATOR, CUT, COPY, PASTE, SEPARATOR, COPY_AS_MARKDOWN, COPY_AS_HTML, PASTE_AS_PLAIN_TEXT]
+
     const menu = new Menu()
     if (isSpellcheckerEnabled) {
       const spellingSubmenu = spellcheckMenuBuilder(isMisspelled, misspelledWord, dictionarySuggestions)
       menu.append(new MenuItem({
-        label: 'Spelling...',
+        label: t('context.spelling'),
         submenu: spellingSubmenu
       }))
       menu.append(new MenuItem(SEPARATOR))

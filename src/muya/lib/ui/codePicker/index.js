@@ -2,6 +2,7 @@ import BaseScrollFloat from '../baseScrollFloat'
 import { patch, h } from '../../parser/render/snabbdom'
 import { search } from '../../prism/index'
 import fileIcons from '../fileIcons'
+import { t } from '../i18n'
 
 import './index.css'
 
@@ -75,7 +76,7 @@ class CodePicker extends BaseScrollFloat {
     })
 
     if (children.length === 0) {
-      children = h('div.no-result', 'No result')
+      children = h('div.no-result', t('noResult'))
     }
     const vnode = h('ul', children)
 

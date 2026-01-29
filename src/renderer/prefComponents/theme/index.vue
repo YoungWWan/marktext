@@ -1,6 +1,6 @@
 <template>
   <div class="pref-theme">
-    <h4>Theme</h4>
+    <h4>{{ $t('theme.title') }}</h4>
     <section class="offcial-themes">
       <div v-for="t of themes" :key="t.name" class="theme"
         :class="[t.name, { 'active': t.name === theme }]"
@@ -11,9 +11,9 @@
     </section>
     <separator></separator>
     <cur-select
-      description="Automatically adjust application theme according to system settings"
+      :description="$t('theme.themeSettings.autoSwitchTheme')"
       :value="autoSwitchTheme"
-      :options="autoSwitchThemeOptions"
+      :options="localizedAutoSwitchThemeOptions"
       :onChange="value => onSelectChange('autoSwitchTheme', value)"
     ></cur-select>
     <separator v-show="false"></separator>
@@ -34,7 +34,7 @@
 <script>
 import { mapState } from 'vuex'
 import themeMd from './theme.md'
-import { autoSwitchThemeOptions, themes } from './config'
+import { themes } from './config'
 import markdownToHtml from '@/util/markdownToHtml'
 import CurSelect from '../common/select'
 import Separator from '../common/separator'
@@ -45,7 +45,6 @@ export default {
     Separator
   },
   data () {
-    this.autoSwitchThemeOptions = autoSwitchThemeOptions
     return {
       themes: []
     }
@@ -54,7 +53,14 @@ export default {
     ...mapState({
       autoSwitchTheme: state => state.preferences.autoSwitchTheme,
       theme: state => state.preferences.theme
-    })
+    }),
+    localizedAutoSwitchThemeOptions () {
+      return [
+        { label: this.$t('autoSwitchTheme.never'), value: 0 },
+        { label: this.$t('autoSwitchTheme.adjustAuto'), value: 2 },
+        { label: this.$t('autoSwitchTheme.openDark'), value: 1 }
+      ]
+    }
   },
   created () {
     this.$nextTick(async () => {

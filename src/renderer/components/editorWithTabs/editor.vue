@@ -551,6 +551,9 @@ export default {
 
       const { container } = this.editor = new Muya(ele, options)
 
+      // Set quick insert hint text for i18n
+      container.style.setProperty('--quickInsertHint', `'${this.$t('editorHints.typeToInsert')}'`)
+
       // Create spell check wrapper and enable spell checking if preferred.
       this.spellchecker = new SpellChecker(spellcheckerEnabled, spellcheckerLanguage)
 

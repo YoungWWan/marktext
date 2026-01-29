@@ -5,6 +5,7 @@ import Keybindings from '../keyboard/shortcutHandler'
 import AppMenu from '../menu'
 import { loadMenuCommands } from '../menu/actions'
 import { CommandManager, loadDefaultCommands } from '../commands'
+import { initLanguage } from '../lang'
 
 class Accessor {
   /**
@@ -18,6 +19,9 @@ class Accessor {
 
     this.preferences = new Preference(this.paths)
     this.dataCenter = new DataCenter(this.paths)
+
+    // Initialize language before menu creation
+    initLanguage(this.preferences.getAll())
 
     this.commandManager = CommandManager
     this._loadCommands()

@@ -22,7 +22,7 @@ export default new Map([
   ['file.move-file', ''],
   ['file.rename-file', ''],
   ['file.print', ''],
-  ['file.preferences', 'Ctrl+,'],
+  ['file.preferences', 'Ctrl+;'],
   ['file.close-tab', 'Ctrl+W'],
   ['file.close-window', 'Ctrl+Shift+W'],
   ['file.quit', 'Ctrl+Q'],

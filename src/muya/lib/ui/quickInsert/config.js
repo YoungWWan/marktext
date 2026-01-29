@@ -33,137 +33,252 @@ const SHIFT_KEY = isOsx ? '⇧' : 'Shift'
 // Caps Lock ⇪
 // Fn
 
-export const quickInsertObj = {
-  'basic block': [{
-    title: 'Paragraph',
-    subTitle: 'Lorem Ipsum is simply dummy text',
+// i18n translations
+const i18n = {
+  en: {
+    basicBlock: 'basic block',
+    header: 'header',
+    advancedBlock: 'advanced block',
+    listBlock: 'list block',
+    diagram: 'diagram',
+    paragraph: 'Paragraph',
+    paragraphSub: 'Lorem Ipsum is simply dummy text',
+    horizontalLine: 'Horizontal Line',
+    frontMatter: 'Front Matter',
+    frontMatterSub: '--- Lorem Ipsum ---',
+    header1: 'Header 1',
+    header2: 'Header 2',
+    header3: 'Header 3',
+    header4: 'Header 4',
+    header5: 'Header 5',
+    header6: 'Header 6',
+    headerSub: 'Lorem Ipsum is simply ...',
+    tableBlock: 'Table Block',
+    tableSub: '|Lorem | Ipsum is simply |',
+    displayMath: 'Display Math',
+    mathSub: '$$ Lorem Ipsum is simply $$',
+    htmlBlock: 'HTML Block',
+    htmlSub: '<div> Lorem Ipsum is simply </div>',
+    codeBlock: 'Code Block',
+    codeSub: '```java Lorem Ipsum is simply ```',
+    quoteBlock: 'Quote Block',
+    quoteSub: '>Lorem Ipsum is simply ...',
+    orderList: 'Order List',
+    orderListSub: '1. Lorem Ipsum is simply ...',
+    bulletList: 'Bullet List',
+    bulletListSub: '- Lorem Ipsum is simply ...',
+    todoList: 'To-do List',
+    todoListSub: '- [x] Lorem Ipsum is simply ...',
+    vegaChart: 'Vega Chart',
+    vegaChartSub: 'Render flow chart by vega-lite.js.',
+    flowChart: 'Flow Chart',
+    flowChartSub: 'Render flow chart by flowchart.js.',
+    sequenceDiagram: 'Sequence Diagram',
+    sequenceDiagramSub: 'Render sequence diagram by js-sequence.',
+    plantumlDiagram: 'PlantUML Diagram',
+    plantumlDiagramSub: 'Render PlantUML diagrams',
+    mermaid: 'Mermaid',
+    mermaidSub: 'Render Diagram by mermaid.',
+    noResult: 'No result'
+  },
+  'zh-CN': {
+    basicBlock: '基础块',
+    header: '标题',
+    advancedBlock: '高级块',
+    listBlock: '列表块',
+    diagram: '图表',
+    paragraph: '段落',
+    paragraphSub: '普通文本段落',
+    horizontalLine: '分割线',
+    frontMatter: 'Front Matter',
+    frontMatterSub: '--- 文档元数据 ---',
+    header1: '一级标题',
+    header2: '二级标题',
+    header3: '三级标题',
+    header4: '四级标题',
+    header5: '五级标题',
+    header6: '六级标题',
+    headerSub: '标题文本...',
+    tableBlock: '表格',
+    tableSub: '|列1 | 列2 |',
+    displayMath: '数学公式块',
+    mathSub: '$$ 数学公式 $$',
+    htmlBlock: 'HTML 块',
+    htmlSub: '<div> HTML 内容 </div>',
+    codeBlock: '代码块',
+    codeSub: '```java 代码内容 ```',
+    quoteBlock: '引用块',
+    quoteSub: '>引用文本...',
+    orderList: '有序列表',
+    orderListSub: '1. 列表项...',
+    bulletList: '无序列表',
+    bulletListSub: '- 列表项...',
+    todoList: '任务列表',
+    todoListSub: '- [x] 任务项...',
+    vegaChart: 'Vega 图表',
+    vegaChartSub: '使用 vega-lite.js 渲染图表',
+    flowChart: '流程图',
+    flowChartSub: '使用 flowchart.js 渲染流程图',
+    sequenceDiagram: '时序图',
+    sequenceDiagramSub: '使用 js-sequence 渲染时序图',
+    plantumlDiagram: 'PlantUML 图',
+    plantumlDiagramSub: '渲染 PlantUML 图表',
+    mermaid: 'Mermaid 图',
+    mermaidSub: '使用 Mermaid 渲染图表',
+    noResult: '无结果'
+  }
+}
+
+// Get current language from global marktext settings
+const getLang = () => {
+  try {
+    return global.marktext?.preferences?.language || 'en'
+  } catch (e) {
+    return 'en'
+  }
+}
+
+const t = (key) => {
+  const lang = getLang()
+  return i18n[lang]?.[key] || i18n.en[key] || key
+}
+
+export const getQuickInsertObj = () => ({
+  [t('basicBlock')]: [{
+    title: t('paragraph'),
+    subTitle: t('paragraphSub'),
     label: 'paragraph',
     shortCut: `${COMMAND_KEY}+0`,
     icon: paragraphIcon
   }, {
-    title: 'Horizontal Line',
+    title: t('horizontalLine'),
     subTitle: '---',
     label: 'hr',
     shortCut: `${OPTION_KEY}+${COMMAND_KEY}+-`,
     icon: hrIcon
   }, {
-    title: 'Front Matter',
-    subTitle: '--- Lorem Ipsum ---',
+    title: t('frontMatter'),
+    subTitle: t('frontMatterSub'),
     label: 'front-matter',
     shortCut: `${OPTION_KEY}+${COMMAND_KEY}+Y`,
     icon: frontMatterIcon
   }],
-  header: [{
-    title: 'Header 1',
-    subTitle: '# Lorem Ipsum is simply ...',
+  [t('header')]: [{
+    title: t('header1'),
+    subTitle: `# ${t('headerSub')}`,
     label: 'heading 1',
     shortCut: `${COMMAND_KEY}+1`,
     icon: header1Icon
   }, {
-    title: 'Header 2',
-    subTitle: '## Lorem Ipsum is simply ...',
+    title: t('header2'),
+    subTitle: `## ${t('headerSub')}`,
     label: 'heading 2',
     shortCut: `${COMMAND_KEY}+2`,
     icon: header2Icon
   }, {
-    title: 'Header 3',
-    subTitle: '### Lorem Ipsum is simply ...',
+    title: t('header3'),
+    subTitle: `### ${t('headerSub')}`,
     label: 'heading 3',
     shortCut: `${COMMAND_KEY}+3`,
     icon: header3Icon
   }, {
-    title: 'Header 4',
-    subTitle: '#### Lorem Ipsum is simply ...',
+    title: t('header4'),
+    subTitle: `#### ${t('headerSub')}`,
     label: 'heading 4',
     shortCut: `${COMMAND_KEY}+4`,
     icon: header4Icon
   }, {
-    title: 'Header 5',
-    subTitle: '##### Lorem Ipsum is simply ...',
+    title: t('header5'),
+    subTitle: `##### ${t('headerSub')}`,
     label: 'heading 5',
     shortCut: `${COMMAND_KEY}+5`,
     icon: header5Icon
   }, {
-    title: 'Header 6',
-    subTitle: '###### Lorem Ipsum is simply ...',
+    title: t('header6'),
+    subTitle: `###### ${t('headerSub')}`,
     label: 'heading 6',
     shortCut: `${COMMAND_KEY}+6`,
     icon: header6Icon
   }],
-  'advanced block': [{
-    title: 'Table Block',
-    subTitle: '|Lorem | Ipsum is simply |',
+  [t('advancedBlock')]: [{
+    title: t('tableBlock'),
+    subTitle: t('tableSub'),
     label: 'table',
     shortCut: `${SHIFT_KEY}+${COMMAND_KEY}+T`,
     icon: newTableIcon
   }, {
-    title: 'Display Math',
-    subTitle: '$$ Lorem Ipsum is simply $$',
+    title: t('displayMath'),
+    subTitle: t('mathSub'),
     label: 'mathblock',
     shortCut: `${OPTION_KEY}+${COMMAND_KEY}+M`,
     icon: mathblockIcon
   }, {
-    title: 'HTML Block',
-    subTitle: '<div> Lorem Ipsum is simply </div>',
+    title: t('htmlBlock'),
+    subTitle: t('htmlSub'),
     label: 'html',
     shortCut: `${OPTION_KEY}+${COMMAND_KEY}+J`,
     icon: htmlIcon
   }, {
-    title: 'Code Block',
-    subTitle: '```java Lorem Ipsum is simply ```',
+    title: t('codeBlock'),
+    subTitle: t('codeSub'),
     label: 'pre',
     shortCut: `${OPTION_KEY}+${COMMAND_KEY}+C`,
     icon: codeIcon
   }, {
-    title: 'Quote Block',
-    subTitle: '>Lorem Ipsum is simply ...',
+    title: t('quoteBlock'),
+    subTitle: t('quoteSub'),
     label: 'blockquote',
     shortCut: `${OPTION_KEY}+${COMMAND_KEY}+Q`,
     icon: quoteIcon
   }],
-  'list block': [{
-    title: 'Order List',
-    subTitle: '1. Lorem Ipsum is simply ...',
+  [t('listBlock')]: [{
+    title: t('orderList'),
+    subTitle: t('orderListSub'),
     label: 'ol-order',
     shortCut: `${OPTION_KEY}+${COMMAND_KEY}+O`,
     icon: orderListIcon
   }, {
-    title: 'Bullet List',
-    subTitle: '- Lorem Ipsum is simply ...',
+    title: t('bulletList'),
+    subTitle: t('bulletListSub'),
     label: 'ul-bullet',
     shortCut: `${OPTION_KEY}+${COMMAND_KEY}+U`,
     icon: bulletListIcon
   }, {
-    title: 'To-do List',
-    subTitle: '- [x] Lorem Ipsum is simply ...',
+    title: t('todoList'),
+    subTitle: t('todoListSub'),
     label: 'ul-task',
     shortCut: `${OPTION_KEY}+${COMMAND_KEY}+X`,
     icon: todoListIcon
   }],
-  diagram: [{
-    title: 'Vega Chart',
-    subTitle: 'Render flow chart by vega-lite.js.',
+  [t('diagram')]: [{
+    title: t('vegaChart'),
+    subTitle: t('vegaChartSub'),
     label: 'vega-lite',
     icon: vegaIcon
   }, {
-    title: 'Flow Chart',
-    subTitle: 'Render flow chart by flowchart.js.',
+    title: t('flowChart'),
+    subTitle: t('flowChartSub'),
     label: 'flowchart',
     icon: flowchartIcon
   }, {
-    title: 'Sequence Diagram',
-    subTitle: 'Render sequence diagram by js-sequence.',
+    title: t('sequenceDiagram'),
+    subTitle: t('sequenceDiagramSub'),
     label: 'sequence',
     icon: sequenceIcon
   }, {
-    title: 'PlantUML Diagram',
-    subTitle: 'Render PlantUML diagrams',
+    title: t('plantumlDiagram'),
+    subTitle: t('plantumlDiagramSub'),
     label: 'plantuml',
     icon: plantumlIcon
   }, {
-    title: 'Mermaid',
-    subTitle: 'Render Diagram by mermaid.',
+    title: t('mermaid'),
+    subTitle: t('mermaidSub'),
     label: 'mermaid',
     icon: mermaidIcon
   }]
-}
+})
+
+// For backward compatibility
+export const quickInsertObj = getQuickInsertObj()
+
+export { t as getQuickInsertText }

@@ -82,7 +82,10 @@ const bootstrapRenderer = () => {
       windowId,
       type
     },
-    paths
+    paths,
+    preferences: {
+      language: 'en' // Default language, will be updated by store
+    }
   }
   global.marktext = marktext
 

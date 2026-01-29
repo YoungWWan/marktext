@@ -253,7 +253,11 @@ const mutations = {
     let tabIndex = 0
     tabIdList.forEach(id => {
       const index = state.tabs.findIndex(f => f.id === id)
-      const { pathname } = state.tabs[index]
+      // Skip if the tab doesn't exist (already closed or never existed)
+      if (index === -1) return
+
+      const tab = state.tabs[index]
+      const pathname = tab ? tab.pathname : null
 
       // Notify main process to remove the file from the window and free resources.
       if (pathname) {

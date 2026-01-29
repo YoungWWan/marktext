@@ -1,15 +1,15 @@
 <template>
   <div class="pref-image">
-    <h4>Image</h4>
+    <h4>{{ $t('image.title') }}</h4>
     <section class="image-ctrl">
-      <div>Default action after an image is inserted from local folder or clipboard
+      <div>{{ $t('image.insertBehavior.imageInsertAction') }}
         <el-tooltip class='item' effect='dark'
           content='Clipboard handling is only fully supported on macOS and Windows.'
           placement='top-start'>
           <i class="el-icon-info"></i>
         </el-tooltip>
       </div>
-      <CurSelect :value="imageInsertAction" :options="imageActions"
+      <CurSelect :value="imageInsertAction" :options="localizedImageActions"
         :onChange="value => onSelectChange('imageInsertAction', value)"></CurSelect>
     </section>
     <Separator />
@@ -23,7 +23,6 @@ import Separator from '../common/separator'
 import Uploader from './components/uploader'
 import CurSelect from '@/prefComponents/common/select'
 import FolderSetting from './components/folderSetting'
-import { imageActions } from './config'
 
 export default {
   components: {
@@ -33,8 +32,6 @@ export default {
     Uploader
   },
   data () {
-    this.imageActions = imageActions
-
     return {}
   },
   computed: {
@@ -42,6 +39,13 @@ export default {
       get: function () {
         return this.$store.state.preferences.imageInsertAction
       }
+    },
+    localizedImageActions () {
+      return [
+        { label: this.$t('imageInsertAction.upload'), value: 'upload' },
+        { label: this.$t('imageInsertAction.folder'), value: 'folder' },
+        { label: this.$t('imageInsertAction.path'), value: 'path' }
+      ]
     }
   },
   methods: {

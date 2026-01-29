@@ -2,20 +2,21 @@ import { Menu } from 'electron'
 import { minimizeWindow, toggleAlwaysOnTop, toggleFullScreen } from '../actions/window'
 import { zoomIn, zoomOut } from '../../windows/utils'
 import { isOsx } from '../../config'
+import { t } from '../../lang'
 
 export default function (keybindings) {
   const menu = {
-    label: '&Window',
+    label: t('window.label'),
     role: 'window',
     submenu: [{
-      label: 'Minimize',
+      label: t('window.minimize'),
       accelerator: keybindings.getAccelerator('window.minimize'),
       click (menuItem, browserWindow) {
         minimizeWindow(browserWindow)
       }
     }, {
       id: 'alwaysOnTopMenuItem',
-      label: 'Always on Top',
+      label: t('window.alwaysOnTop'),
       type: 'checkbox',
       accelerator: keybindings.getAccelerator('window.toggle-always-on-top'),
       click (menuItem, browserWindow) {
@@ -24,13 +25,13 @@ export default function (keybindings) {
     }, {
       type: 'separator'
     }, {
-      label: 'Zoom In',
+      label: t('window.zoomIn'),
       accelerator: keybindings.getAccelerator('window.zoom-in'),
       click (menuItem, browserWindow) {
         zoomIn(browserWindow)
       }
     }, {
-      label: 'Zoom Out',
+      label: t('window.zoomOut'),
       accelerator: keybindings.getAccelerator('window.zoom-out'),
       click (menuItem, browserWindow) {
         zoomOut(browserWindow)
@@ -38,7 +39,7 @@ export default function (keybindings) {
     }, {
       type: 'separator'
     }, {
-      label: 'Show in Full Screen',
+      label: t('window.fullScreen'),
       accelerator: keybindings.getAccelerator('window.toggle-full-screen'),
       click (item, browserWindow) {
         if (browserWindow) {
@@ -50,7 +51,7 @@ export default function (keybindings) {
 
   if (isOsx) {
     menu.submenu.push({
-      label: 'Bring All to Front',
+      label: t('window.bringAllToFront'),
       click () {
         Menu.sendActionToFirstResponder('arrangeInFront:')
       }

@@ -412,7 +412,16 @@ class Selection {
     const { anchor, focus } = cursorRange
     const anchorParagraph = document.querySelector(`#${anchor.key}`)
     const focusParagraph = document.querySelector(`#${focus.key}`)
+
+    // Return early if the target paragraphs don't exist (may have been deleted)
+    if (!anchorParagraph || !focusParagraph) {
+      return
+    }
+
     const getNodeAndOffset = (node, offset) => {
+      if (!node) {
+        return { node: null, offset: 0 }
+      }
       if (node.nodeType === 3) {
         return {
           node,
