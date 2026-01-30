@@ -10,7 +10,8 @@ export default {
     spelling: 'Spelling',
     theme: 'Theme',
     image: 'Image',
-    keybindings: 'Key Bindings'
+    keybindings: 'Key Bindings',
+    ai: 'AI'
   },
   general: {
     title: 'General',
@@ -232,5 +233,86 @@ export default {
   // Editor hints
   editorHints: {
     typeToInsert: 'Type @ to insert'
+  },
+  // AI Settings Page
+  aiSettings: {
+    title: 'AI',
+    provider: {
+      title: 'Provider:',
+      description: 'AI service provider'
+    },
+    model: {
+      title: 'Model:',
+      description: 'AI model to use',
+      placeholder: 'e.g. claude-sonnet-4-20250514, gpt-4o'
+    },
+    apiKey: {
+      title: 'API Key:',
+      description: 'API key for the selected provider',
+      notes: 'Your API key is stored locally and never shared.',
+      placeholder: 'Enter your API key'
+    },
+    agent: {
+      title: 'Agent:',
+      description: 'Default agent type'
+    },
+    baseUrl: {
+      title: 'Custom Base URL:',
+      description: 'Custom API endpoint (optional)',
+      notes: 'Leave empty to use the default endpoint.',
+      placeholder: 'https://api.example.com/v1'
+    },
+    test: {
+      title: 'Test Connection:',
+      description: 'Test if your AI configuration is correct',
+      button: 'Test Connection',
+      testing: 'Testing...',
+      success: 'Connected ✓',
+      failed: 'Failed ✗',
+      successMessage: 'Configuration is correct and ready to use',
+      errorMessage: 'Connection failed, please check your configuration'
+    }
+  },
+  // AI Agent
+  ai: {
+    title: 'AI',
+    settings: 'Settings',
+    newSession: 'New Session',
+    sessions: 'Sessions',
+    noSessions: 'No sessions yet',
+    deleteSession: 'Delete session',
+    deleteConfirm: 'Are you sure you want to delete this session?',
+    startNew: 'Start a new session to begin',
+    agent: 'Agent',
+    selectAgent: 'Select Agent',
+    mcpStatus: 'MCP Status',
+    noMcp: 'No MCP servers configured',
+    connected: 'Connected',
+    disconnected: 'Disconnected',
+    processing: 'Processing...',
+    cancel: 'Cancel',
+    send: 'Send',
+    inputPlaceholder: 'Type your message... (Shift+Enter for new line)',
+    you: 'You',
+    assistant: 'Assistant',
+    thinking: 'Thinking...',
+    toolPending: 'Pending',
+    toolRunning: 'Running',
+    toolDone: 'Done',
+    toolError: 'Error',
+    input: 'Input',
+    tokens: 'Tokens',
+    permissionRequest: 'Permission Request',
+    allow: 'Allow',
+    deny: 'Deny',
+    diffPreview: {
+      title: 'AI Edit Preview',
+      accept: 'Accept',
+      reject: 'Reject'
+    },
+    alwaysAllow: 'Always Allow',
+    error: 'Error',
+    noApiKey: 'Please configure your API key in Preferences → AI',
+    openSettings: 'Open Settings'
   }
 }

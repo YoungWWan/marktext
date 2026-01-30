@@ -209,10 +209,10 @@ export default {
   }
   .drag-bar {
     position: absolute;
-    top: 0;
+    top: var(--titleBarHeight);
     right: 0;
     bottom: 0;
-    height: 100%;
+    height: calc(100% - var(--titleBarHeight));
     width: 3px;
     cursor: col-resize;
     &:hover {

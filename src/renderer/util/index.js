@@ -122,6 +122,10 @@ export const getUniqueId = () => {
   return `${ID_PREFEX}${id++}`
 }
 
+export const generateId = () => {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 9)}`
+}
+
 export const hasKeys = obj => Object.keys(obj).length > 0
 
 /**

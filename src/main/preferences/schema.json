@@ -407,5 +407,38 @@
     "description": "Watcher--Whether to use polling. Polling may leads to high CPU utilization but is necessary to watch files over a network.",
     "type": "boolean",
     "default": false
+  },
+  "aiProvider": {
+    "description": "AI--The AI service provider.",
+    "enum": [
+      "anthropic",
+      "openai",
+      "openrouter"
+    ],
+    "default": "anthropic"
+  },
+  "aiModel": {
+    "description": "AI--The AI model to use.",
+    "type": "string",
+    "default": "claude-sonnet-4-20250514"
+  },
+  "aiApiKey": {
+    "description": "AI--The API key for the AI service.",
+    "type": "string",
+    "default": ""
+  },
+  "aiAgent": {
+    "description": "AI--The default agent type.",
+    "enum": [
+      "build",
+      "write",
+      "research"
+    ],
+    "default": "build"
+  },
+  "aiBaseUrl": {
+    "description": "AI--Custom base URL for the AI service.",
+    "type": "string",
+    "default": ""
   }
 }

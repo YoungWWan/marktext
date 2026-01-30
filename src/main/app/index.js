@@ -17,6 +17,7 @@ import { watchers } from '../utils/imagePathAutoComplement'
 import { WindowType } from '../windows/base'
 import EditorWindow from '../windows/editor'
 import SettingWindow from '../windows/setting'
+import { initAIService } from '../ai'
 
 class App {
   /**
@@ -33,6 +34,9 @@ class App {
     // this.shortcutCapture = null
 
     this._listenForIpcMain()
+
+    // 初始化 AI 服务
+    initAIService()
   }
 
   /**
@@ -544,8 +548,8 @@ class App {
       }
     })
 
-    ipcMain.on('mt::open-setting-window', () => {
-      this._openSettingsWindow()
+    ipcMain.on('mt::open-setting-window', (e, category) => {
+      this._openSettingsWindow(category)
     })
 
     ipcMain.on('mt::make-screenshot', e => {

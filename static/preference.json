@@ -66,5 +66,11 @@
   "searchNoIgnore": false,
   "searchFollowSymlinks": true,
 
-  "watcherUsePolling": false
+  "watcherUsePolling": false,
+
+  "aiProvider": "anthropic",
+  "aiModel": "claude-sonnet-4-20250514",
+  "aiApiKey": "",
+  "aiAgent": "build",
+  "aiBaseUrl": ""
 }

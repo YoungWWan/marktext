@@ -7,11 +7,19 @@ import SpellChecker from '@/prefComponents/spellchecker'
 import Theme from '@/prefComponents/theme'
 import Image from '@/prefComponents/image'
 import Keybindings from '@/prefComponents/keybindings'
+import AI from '@/prefComponents/ai'
 
 const parseSettingsPage = type => {
   let pageUrl = '/preference'
-  if (/\/spelling$/.test(type)) {
-    pageUrl += '/spelling'
+  // 支持 settings/ai, settings/spelling 等格式
+  const match = type.match(/\/(\w+)$/)
+  if (match) {
+    const category = match[1]
+    // 验证是有效的偏好设置类别
+    const validCategories = ['general', 'editor', 'markdown', 'spelling', 'theme', 'image', 'keybindings', 'ai']
+    if (validCategories.includes(category)) {
+      pageUrl += '/' + category
+    }
   }
   return pageUrl
 }
@@ -39,6 +47,8 @@ const routes = type => ([{
     path: 'image', component: Image, name: 'image'
   }, {
     path: 'keybindings', component: Keybindings, name: 'keybindings'
+  }, {
+    path: 'ai', component: AI, name: 'ai'
   }]
 }])
 

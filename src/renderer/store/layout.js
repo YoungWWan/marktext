@@ -9,6 +9,7 @@ const state = {
   rightColumn: 'files',
   showSideBar: false,
   showTabBar: false,
+  showAiPanel: false,
   sideBarWidth
 }
 

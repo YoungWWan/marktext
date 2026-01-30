@@ -94,7 +94,14 @@ const state = {
       branch: ''
     }
   },
-  cliScript: ''
+  cliScript: '',
+
+  // AI settings
+  aiProvider: 'anthropic',
+  aiModel: 'claude-sonnet-4-20250514',
+  aiApiKey: '',
+  aiAgent: 'build',
+  aiBaseUrl: ''
 }
 
 const getters = {}
@@ -132,6 +139,8 @@ const actions = {
   SET_SINGLE_PREFERENCE ({ commit }, { type, value }) {
     // save to electron-store
     ipcRenderer.send('mt::set-user-preference', { [type]: value })
+    // 同时更新本地state
+    commit('SET_USER_PREFERENCE', { [type]: value })
   },
 
   SET_USER_DATA ({ commit }, { type, value }) {

@@ -10,7 +10,8 @@ export default {
     spelling: '拼写检查',
     theme: '主题',
     image: '图片',
-    keybindings: '快捷键'
+    keybindings: '快捷键',
+    ai: 'AI'
   },
   general: {
     title: '通用',
@@ -232,5 +233,88 @@ export default {
   // Editor hints
   editorHints: {
     typeToInsert: '输入 @ 插入'
+  },
+  // AI Settings Page
+  aiSettings: {
+    title: 'AI',
+    provider: {
+      title: '服务商：',
+      description: 'AI 服务提供商'
+    },
+    model: {
+      title: '模型：',
+      description: '使用的 AI 模型',
+      placeholder: '例如: claude-sonnet-4-20250514, gpt-4o'
+    },
+    apiKey: {
+      title: 'API 密钥：',
+      description: '所选服务商的 API 密钥',
+      notes: '您的 API 密钥仅存储在本地，不会被分享。',
+      placeholder: '请输入您的 API 密钥'
+    },
+    agent: {
+      title: '代理类型：',
+      description: '默认代理类型'
+    },
+    baseUrl: {
+      title: '自定义接口地址：',
+      description: '自定义 API 端点（可选）',
+      notes: '留空将使用默认端点。',
+      placeholder: 'https://api.example.com/v1'
+    },
+    test: {
+      title: '测试连接：',
+      description: '测试您的 AI 配置是否正确',
+      button: '测试连接',
+      testing: '测试中...',
+      success: '连接成功 ✓',
+      failed: '连接失败 ✗',
+      successMessage: '配置正确，可以正常使用',
+      errorMessage: '连接失败，请检查配置'
+    }
+  },
+  // AI Agent
+  ai: {
+    title: 'AI',
+    settings: '设置',
+    newSession: '新建会话',
+    sessions: '会话列表',
+    noSessions: '暂无会话',
+    deleteSession: '删除会话',
+    deleteConfirm: '确定要删除这个会话吗？',
+    startNew: '开始新会话',
+    agent: '代理',
+    selectAgent: '选择代理',
+    mcpStatus: 'MCP 状态',
+    noMcp: '未配置 MCP 服务器',
+    connected: '已连接',
+    disconnected: '未连接',
+    processing: '处理中...',
+    cancel: '取消',
+    send: '发送',
+    inputPlaceholder: '输入消息... (Shift+Enter 换行)',
+    you: '你',
+    assistant: '助手',
+    thinking: '思考中...',
+    toolPending: '等待中',
+    toolRunning: '执行中',
+    toolDone: '完成',
+    toolError: '错误',
+    input: '输入',
+    output: '输出',
+    reasoning: '思考过程',
+    tokens: 'Token',
+    permissionRequest: '权限请求',
+    allow: '允许',
+    deny: '拒绝',
+    diffPreview: {
+      title: 'AI 编辑预览',
+      accept: '接受',
+      reject: '拒绝'
+    },
+    alwaysAllow: '始终允许',
+    error: '错误',
+    noApiKey: '请在 偏好设置 → AI 中配置您的 API 密钥',
+    openSettings: '打开设置'
   }
 }

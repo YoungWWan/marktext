@@ -2,6 +2,8 @@
   <div
     class="editor-container"
   >
+    <!-- 顶部固定分割线 -->
+    <div class="top-divider"></div>
     <side-bar v-if="init"></side-bar>
     <div class="editor-middle">
       <title-bar
@@ -33,6 +35,7 @@
       <tweet></tweet>
       <import-modal></import-modal>
     </div>
+    <ai-panel v-if="init"></ai-panel>
   </div>
 </template>
 
@@ -42,6 +45,7 @@ import Recent from '@/components/recent'
 import EditorWithTabs from '@/components/editorWithTabs'
 import TitleBar from '@/components/titleBar'
 import SideBar from '@/components/sideBar'
+import AiPanel from '@/components/aiPanel'
 import AboutDialog from '@/components/about'
 import CommandPalette from '@/components/commandPalette'
 import ExportSettingDialog from '@/components/exportSettings'
@@ -49,7 +53,7 @@ import Rename from '@/components/rename'
 import Tweet from '@/components/tweet'
 import ImportModal from '@/components/import'
 import { loadingPageMixins } from '@/mixins'
-import { mapState } from 'vuex'
+import { mapState, mapMutations } from 'vuex'
 import bus from '@/bus'
 import { DEFAULT_STYLE } from '@/config'
 import { ipcRenderer } from 'electron'
@@ -61,6 +65,7 @@ export default {
     EditorWithTabs,
     TitleBar,
     SideBar,
+    AiPanel,
     AboutDialog,
     ExportSettingDialog,
     Rename,
@@ -76,6 +81,7 @@ export default {
   computed: {
     ...mapState({
       showTabBar: state => state.layout.showTabBar,
+      showAiPanel: state => state.layout.showAiPanel,
       sourceCode: state => state.preferences.sourceCode,
       theme: state => state.preferences.theme,
       textDirection: state => state.preferences.textDirection
@@ -98,6 +104,9 @@ export default {
     hasCurrentFile () {
       return this.markdown !== undefined
     }
+  },
+  methods: {
+    ...mapMutations(['SET_LAYOUT'])
   },
   watch: {
     theme: function (value, oldValue) {
@@ -228,8 +237,22 @@ export default {
     flex: 1;
     min-height: 100vh;
     position: relative;
+    padding-top: var(--titleBarHeight);
+    box-sizing: border-box;
     & > .editor {
       flex: 1;
     }
+  }
+  .top-divider {
+    position: fixed;
+    top: var(--titleBarHeight);
+    left: 0;
+    right: 0;
+    width: 100%;
+    height: 1px;
+    background: var(--floatBorderColor, rgba(0, 0, 0, 0.1));
+    z-index: 1000;
+    pointer-events: none;
+    box-sizing: border-box;
   }
 </style>

@@ -92,6 +92,19 @@
             </svg>
           </div>
         </div>
+        <div class="toolbar-separator"></div>
+        <div
+          class="frameless-titlebar-button frameless-titlebar-ai"
+          :class="{ 'active': showAiPanel }"
+          @click.stop="handleAiClick"
+          title="AI"
+        >
+          <div>
+            <svg width="16" height="16" viewBox="0 0 24 24">
+              <path fill="currentColor" d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+            </svg>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -154,7 +167,8 @@ export default {
   computed: {
     ...mapState({
       titleBarStyle: state => state.preferences.titleBarStyle,
-      showTabBar: state => state.layout.showTabBar
+      showTabBar: state => state.layout.showTabBar,
+      showAiPanel: state => state.layout.showAiPanel
     }),
     paths () {
       if (!this.pathname) return []
@@ -225,6 +239,10 @@ export default {
       }
     },
 
+    handleAiClick () {
+      this.$store.commit('TOGGLE_LAYOUT_ENTRY', 'showAiPanel')
+    },
+
     onMaximize () {
       this.isMaximized = true
     },
@@ -251,10 +269,13 @@ export default {
   .title-bar-editor-bg {
     height: var(--titleBarHeight);
     background: var(--editorBgColor);
-    position: relative;
+    position: fixed;
     left: 0;
     top: 0;
     right: 0;
+    width: 100%;
+    z-index: 1;
+    box-sizing: border-box;
   }
   .title-bar {
     -webkit-app-region: drag;
@@ -344,13 +365,19 @@ export default {
     position: absolute;
     top: 0;
     right: 0;
-    width: 138px;
     display: flex;
     align-items: center;
     flex-direction: row-reverse;
     & .item {
       margin-right: 10px;
     }
+  }
+
+  .toolbar-separator {
+    width: 1px;
+    height: 16px;
+    background: var(--editorColor20);
+    margin: 0 4px;
   }
 
   .word-count {
@@ -404,6 +431,25 @@ export default {
   }
   .frameless-titlebar-close:hover svg {
     fill: #ffffff
+  }
+
+  .frameless-titlebar-ai {
+    color: var(--sideBarColor);
+    width: 36px;
+  }
+  .frameless-titlebar-ai:hover {
+    background-color: rgba(0, 0, 0, 0.1);
+  }
+  .frameless-titlebar-ai.active {
+    background-color: var(--themeColor);
+    color: #ffffff;
+  }
+  .frameless-titlebar-ai.active:hover {
+    background-color: var(--themeColor);
+    opacity: 0.9;
+  }
+  .frameless-titlebar-ai svg {
+    fill: currentColor;
   }
 
   .text-center-vertical {
