@@ -13,6 +13,7 @@ import {
   QuickOpenCommand,
   TrailingNewlineCommand
 } from '../commands'
+import i18n from '../lang'
 
 const autoSaveTimers = new Map()
 
@@ -20,7 +21,8 @@ const state = {
   currentFile: {},
   tabs: [],
   listToc: [], // Just use for deep equal check. and replace with new toc if needed.
-  toc: []
+  toc: [],
+  aiModifiedFiles: {} // 存储AI修改的文件信息 { pathname: { oldContent, newContent, diffPreview } }
 }
 
 const mutations = {
@@ -299,6 +301,18 @@ const mutations = {
     })
   },
 
+  // 设置AI修改的文件信息
+  SET_AI_MODIFIED_FILE (state, { pathname, oldContent, newContent, diffPreview }) {
+    state.aiModifiedFiles[pathname] = {
+      oldContent,
+      newContent,
+      diffPreview
+    }
+  },
+  // 清除AI修改的文件信息
+  CLEAR_AI_MODIFIED_FILE (state, pathname) {
+    delete state.aiModifiedFiles[pathname]
+  },
   // Push a tab specific notification on stack that never disappears.
   PUSH_TAB_NOTIFICATION (state, data) {
     const defaultAction = () => {}
@@ -308,6 +322,7 @@ const mutations = {
     const style = data.style || 'info'
     // Whether only one notification should exist.
     const exclusiveType = data.exclusiveType || ''
+    const aiFileInfo = data.aiFileInfo || null
 
     const { tabs } = state
     const tab = tabs.find(t => t.id === tabId)
@@ -333,7 +348,8 @@ const mutations = {
       showConfirm,
       style,
       exclusiveType,
-      action: action
+      action: action,
+      aiFileInfo: aiFileInfo
     })
   }
 }
@@ -1146,7 +1162,7 @@ const actions = {
             commit('SET_SAVE_STATUS_BY_TAB', { tab, status: false })
             commit('PUSH_TAB_NOTIFICATION', {
               tabId: id,
-              msg: `"${filename}" has been removed on disk.`,
+              msg: i18n.t('fileChange.removedOnDisk', { filename }),
               style: 'warn',
               showConfirm: false,
               exclusiveType: 'file_changed'
@@ -1155,6 +1171,54 @@ const actions = {
           }
           case 'add':
           case 'change': {
+            // 检查是否是AI修改的文件
+            const aiFileInfo = state.aiModifiedFiles[pathname]
+            if (aiFileInfo) {
+              // 是AI修改的文件，检查是否已经有通知
+              const existingNotification = tab.notifications && tab.notifications.find(n => n.exclusiveType === 'ai_file_changed')
+              if (existingNotification) {
+                // 更新现有通知的action和aiFileInfo（确保使用最新的）
+                existingNotification.aiFileInfo = aiFileInfo
+                existingNotification.action = status => {
+                  if (status) {
+                    // 用户确认接受修改
+                    commit('LOAD_CHANGE', change)
+                    commit('CLEAR_AI_MODIFIED_FILE', pathname)
+                  } else {
+                    // 用户拒绝修改，回滚到旧内容
+                    const oldChange = { ...change, data: aiFileInfo.oldContent }
+                    commit('LOAD_CHANGE', oldChange)
+                    commit('CLEAR_AI_MODIFIED_FILE', pathname)
+                  }
+                }
+              } else {
+                // 创建新通知
+                commit('SET_SAVE_STATUS_BY_TAB', { tab, status: false })
+                commit('PUSH_TAB_NOTIFICATION', {
+                  tabId: id,
+                  msg: '', // 不显示文本提示
+                  showConfirm: true,
+                  exclusiveType: 'ai_file_changed',
+                  style: 'info',
+                  aiFileInfo: aiFileInfo,
+                  action: status => {
+                    if (status) {
+                      // 用户确认接受修改
+                      commit('LOAD_CHANGE', change)
+                      commit('CLEAR_AI_MODIFIED_FILE', pathname)
+                    } else {
+                      // 用户拒绝修改，回滚到旧内容
+                      const oldChange = { ...change, data: aiFileInfo.oldContent }
+                      commit('LOAD_CHANGE', oldChange)
+                      commit('CLEAR_AI_MODIFIED_FILE', pathname)
+                    }
+                  }
+                })
+              }
+              // 不自动加载文件内容，等待用户确认
+              return
+            }
+
             const { autoSave } = rootState.preferences
             if (autoSave) {
               if (autoSaveTimers.has(id)) {
@@ -1173,7 +1237,7 @@ const actions = {
             commit('SET_SAVE_STATUS_BY_TAB', { tab, status: false })
             commit('PUSH_TAB_NOTIFICATION', {
               tabId: id,
-              msg: `"${filename}" has been changed on disk. Do you want to reload it?`,
+              msg: i18n.t('fileChange.changedOnDisk', { filename }),
               showConfirm: true,
               exclusiveType: 'file_changed',
               action: status => {
@@ -1189,6 +1253,68 @@ const actions = {
         }
       } else {
         console.error(`LISTEN_FOR_FILE_CHANGE: Cannot find tab for path "${pathname}".`)
+      }
+    })
+  },
+
+  LISTEN_FOR_AI_FILE_MODIFIED ({ commit, state, rootState }) {
+    ipcRenderer.on('mt::ai-file-modified', (e, { pathname, oldContent, newContent, diffPreview }) => {
+      // 如果文件已经在tabs中打开，使用编辑器当前的内容作为oldContent（更准确）
+      const { tabs } = state
+      const tab = tabs.find(t => isSamePathSync(t.pathname, pathname))
+      let actualOldContent = oldContent
+
+      if (tab && tab.markdown) {
+        // 使用编辑器当前的内容作为oldContent
+        if (typeof tab.markdown === 'string') {
+          actualOldContent = tab.markdown
+        } else if (Array.isArray(tab.markdown)) {
+          // markdown是blocks数组，需要转换为字符串
+          // 使用简单方法提取文本内容
+          actualOldContent = tab.markdown.map(block => {
+            if (block.text) return block.text
+            if (block.children && Array.isArray(block.children)) {
+              return block.children.map(child => child.text || '').join('\n')
+            }
+            return ''
+          }).filter(Boolean).join('\n')
+        }
+      }
+
+      const aiFileInfo = {
+        oldContent: actualOldContent,
+        newContent: newContent,
+        diffPreview: diffPreview
+      }
+
+      commit('SET_AI_MODIFIED_FILE', { pathname, oldContent: actualOldContent, newContent, diffPreview })
+
+      // 如果文件已经在tabs中打开，立即显示diff预览通知
+      if (tab) {
+        const { id } = tab
+
+        // 检查是否已经有通知，如果有则更新，否则创建新的
+        const existingNotification = tab.notifications && tab.notifications.find(n => n.exclusiveType === 'ai_file_changed')
+        if (existingNotification) {
+          // 更新现有通知的aiFileInfo（确保使用最新的）
+          existingNotification.aiFileInfo = aiFileInfo
+          // 如果action还没有设置，等待文件变化事件
+        } else {
+          // 创建新通知（action会在文件变化事件到达时设置）
+          commit('SET_SAVE_STATUS_BY_TAB', { tab, status: false })
+          commit('PUSH_TAB_NOTIFICATION', {
+            tabId: id,
+            msg: '', // 不显示文本提示
+            showConfirm: true,
+            exclusiveType: 'ai_file_changed',
+            style: 'info',
+            aiFileInfo: aiFileInfo,
+            action: () => {
+              // 这个action会在文件变化事件到达时设置
+              console.warn('AI file diff action called but not set yet')
+            }
+          })
+        }
       }
     })
   },

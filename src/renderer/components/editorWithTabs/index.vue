@@ -10,7 +10,12 @@
           :cursor="cursor"
           :text-direction="textDirection"
           :platform="platform"
-        ></editor>
+        >
+          <!-- AI Diff 作为编辑器内容的一部分，通过 slot 插入 -->
+          <template slot="diff-overlay">
+            <editor-diff-overlay></editor-diff-overlay>
+          </template>
+        </editor>
         <source-code
           v-if="sourceCode"
           :markdown="markdown"
@@ -28,6 +33,7 @@ import Tabs from './tabs.vue'
 import Editor from './editor.vue'
 import SourceCode from './sourceCode.vue'
 import TabNotifications from './notifications.vue'
+import EditorDiffOverlay from './editorDiffOverlay.vue'
 
 export default {
   props: {
@@ -62,7 +68,8 @@ export default {
     Tabs,
     Editor,
     SourceCode,
-    TabNotifications
+    TabNotifications,
+    EditorDiffOverlay
   },
   computed: {
     ...mapState({
@@ -84,8 +91,18 @@ export default {
     overflow: hidden;
     background: var(--editorBgColor);
     & > .container {
+      position: relative;
       flex: 1;
       overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    & > .container > .editor-container-wrapper {
+      position: relative;
+      flex: 1;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
     }
   }
 </style>

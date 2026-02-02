@@ -214,6 +214,23 @@ export default {
     emptyProject: 'Empty project',
     createFile: 'Create File'
   },
+  // Sidebar - Context Menu
+  sidebarContextMenu: {
+    newFile: 'New File',
+    newDirectory: 'New Directory',
+    copy: 'Copy',
+    cut: 'Cut',
+    paste: 'Paste',
+    rename: 'Rename',
+    moveToTrash: 'Move To Trash',
+    showInFolder: 'Show In Folder'
+  },
+  // File Change Notifications
+  fileChange: {
+    changedOnDisk: '"{filename}" has been changed on disk. Do you want to reload it?',
+    removedOnDisk: '"{filename}" has been removed on disk.',
+    changedByAI: '"{filename}" has been modified by AI. Do you want to accept the changes?'
+  },
   // Sidebar - Table of Contents
   toc: {
     title: 'Table Of Contents'
@@ -308,7 +325,9 @@ export default {
     diffPreview: {
       title: 'AI Edit Preview',
       accept: 'Accept',
-      reject: 'Reject'
+      reject: 'Reject',
+      accepted: 'Accepted',
+      rejected: 'Rejected'
     },
     alwaysAllow: 'Always Allow',
     error: 'Error',

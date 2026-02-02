@@ -279,9 +279,9 @@ export function createAIService (config) {
               })
             }
 
-            // 对于write/edit操作，先显示diff预览
-            if ((toolCall.name === 'write' || toolCall.name === 'edit') && onPermissionRequest) {
-              // 先读取文件内容（如果是edit）
+            // 对于write/edit操作，直接执行文件修改，然后通过onToolResult传递diff信息（不阻塞）
+            if (toolCall.name === 'write' || toolCall.name === 'edit') {
+              // 先读取文件内容（保存原始内容用于回滚）
               let oldContent = ''
               if (toolCall.name === 'edit') {
                 try {
@@ -291,6 +291,16 @@ export function createAIService (config) {
                   }
                 } catch (e) {
                   // 如果文件不存在，oldContent保持为空
+                }
+              } else if (toolCall.name === 'write') {
+                // 对于write操作，也尝试读取现有内容（如果文件存在）
+                try {
+                  const readResult = await executeTool('read', { path: toolCall.input.path }, workingDirectory)
+                  if (readResult.success) {
+                    oldContent = readResult.output
+                  }
+                } catch (e) {
+                  // 文件不存在，oldContent保持为空
                 }
               }
 
@@ -307,26 +317,49 @@ export function createAIService (config) {
                 }
               }
 
-              // 请求用户确认diff预览
-              const allowed = await onPermissionRequest({
-                tool: toolCall.name,
-                description: getToolDescription(toolCall.name, toolCall.input),
-                type: 'diff-preview',
+              // 准备diffPreview信息
+              const diffPreview = {
                 filePath: toolCall.input.path,
                 oldContent: oldContent,
-                newContent: newContent,
-                toolCallId: toolCall.id
-              })
-
-              if (!allowed) {
-                if (onToolResult) {
-                  onToolResult(toolCall.id, {
-                    success: false,
-                    error: 'Edit rejected by user'
-                  })
-                }
-                continue
+                newContent: newContent
               }
+
+              // 直接执行文件修改（不等待确认），传递oldContent和diffPreview
+              const toolInput = {
+                ...toolCall.input,
+                oldContent: oldContent,
+                diffPreview: diffPreview
+              }
+              const result = await executeTool(toolCall.name, toolInput, workingDirectory)
+
+              // 通知结果（文件已经修改），并传递diff信息
+              if (onToolResult) {
+                onToolResult(toolCall.id, {
+                  ...result,
+                  diffPreview: diffPreview
+                })
+              }
+
+              // 添加工具调用消息
+              apiMessages.push({
+                role: 'assistant',
+                content: textBeforeTools || null,
+                tool_calls: [{
+                  id: toolCall.id,
+                  type: 'function',
+                  function: {
+                    name: toolCall.name,
+                    arguments: JSON.stringify(toolCall.input)
+                  }
+                }]
+              })
+              apiMessages.push({
+                role: 'tool',
+                tool_call_id: toolCall.id,
+                content: result.success ? result.output : `Error: ${result.error}`
+              })
+              console.log(`[AI Service] Added tool call and result to apiMessages. Total messages: ${apiMessages.length}`)
+              continue
             } else {
               // 对于其他操作（如bash），请求权限
               const needsPermission = ['bash'].includes(toolCall.name)
@@ -976,7 +1009,9 @@ async function executeTool (toolName, input, workingDirectory) {
         const result = await ipcRenderer.invoke('ai:tool:write', {
           path: input.path,
           content: input.content,
-          workingDirectory
+          workingDirectory,
+          oldContent: input.oldContent,
+          diffPreview: input.diffPreview
         })
         return result
       }
@@ -985,7 +1020,8 @@ async function executeTool (toolName, input, workingDirectory) {
           path: input.path,
           oldString: input.old_string,
           newString: input.new_string,
-          workingDirectory
+          workingDirectory,
+          diffPreview: input.diffPreview
         })
         return result
       }

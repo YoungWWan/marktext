@@ -214,15 +214,29 @@ class EditorWindow extends BaseWindow {
     // Disable application menu shortcuts because we want to handle key bindings ourself.
     win.webContents.setIgnoreMenuShortcuts(true)
 
-    // Delay load files and directories after the current control flow.
-    setTimeout(() => {
-      if (rootDirectory) {
-        this.openFolder(rootDirectory)
+    // Store root directory and files to open - they will be opened in _doOpenFilesToOpen
+    // when the window is ready
+    if (rootDirectory) {
+      this._directoryToOpen = rootDirectory
+    }
+    if (fileList.length) {
+      // Load files asynchronously and store them
+      const { preferences } = this._accessor
+      const eol = preferences.getPreferredEol()
+      const { autoGuessEncoding, trimTrailingNewline } = preferences.getAll()
+      
+      fileList.forEach(filePath => {
+        loadMarkdownFile(filePath, eol, autoGuessEncoding, trimTrailingNewline).then(rawDocument => {
+          this._filesToOpen.push({ doc: rawDocument, options: {}, selected: false })
+        }).catch(err => {
+          log.error(`[ERROR] Cannot preload file: ${err.message}`)
+        })
+      })
+      // Mark first file as selected
+      if (fileList.length > 0) {
+        // We'll set selected=true for the first file in _doOpenFilesToOpen
       }
-      if (fileList.length) {
-        this.openTabsFromPaths(fileList)
-      }
-    }, 0)
+    }
 
     return win
   }
@@ -326,6 +340,12 @@ class EditorWindow extends BaseWindow {
 
       appMenu.addRecentlyUsedDocument(pathname)
       this._openedRootDirectory = pathname
+      // Save last opened folder to preferences
+      const { preferences } = _accessor
+      preferences.setItem('lastOpenedFolder', pathname)
+      // Verify the save was successful
+      const savedPath = preferences.getItem('lastOpenedFolder')
+      log.info(`[EditorWindow] Saved last opened folder: ${pathname}, verified: ${savedPath}`)
       ipcMain.emit('watcher-watch-directory', browserWindow, pathname)
       browserWindow.webContents.send('mt::open-directory', pathname)
     } else {
@@ -467,6 +487,15 @@ class EditorWindow extends BaseWindow {
     const { menu: appMenu } = _accessor
     const { pathname } = rawDocument
 
+    // If no folder is opened or the file is not in the opened folder, open the file's parent folder
+    if (!this._openedRootDirectory || !isChildOfDirectory(this._openedRootDirectory, pathname)) {
+      const parentDir = path.dirname(pathname)
+      // Only open folder if it's different from current opened folder
+      if (!this._openedRootDirectory || !isSamePathSync(this._openedRootDirectory, parentDir)) {
+        this.openFolder(parentDir)
+      }
+    }
+
     // Listen for file changed.
     ipcMain.emit('watcher-watch-file', browserWindow, pathname)
 
@@ -480,12 +509,16 @@ class EditorWindow extends BaseWindow {
       throw new Error('Invalid state.')
     }
 
+    // Open folder first if needed
     if (this._directoryToOpen) {
       this.openFolder(this._directoryToOpen)
+      this._directoryToOpen = null
     }
-    this._directoryToOpen = null
 
-    for (const { doc, options, selected } of this._filesToOpen) {
+    // Open files - mark first one as selected
+    for (let i = 0; i < this._filesToOpen.length; i++) {
+      const { doc, options } = this._filesToOpen[i]
+      const selected = i === 0
       this._doOpenTab(doc, options, selected)
     }
     this._filesToOpen.length = 0

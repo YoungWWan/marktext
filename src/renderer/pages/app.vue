@@ -167,6 +167,7 @@ export default {
     dispatch('LINTEN_FOR_PRINT_SERVICE_CLEARUP')
     dispatch('LINTEN_FOR_EXPORT_SUCCESS')
     dispatch('LISTEN_FOR_FILE_CHANGE')
+    dispatch('LISTEN_FOR_AI_FILE_MODIFIED')
     dispatch('LISTEN_WINDOW_ZOOM')
     dispatch('LISTEN_FOR_RELOAD_IMAGES')
     dispatch('LISTEN_FOR_CONTEXT_MENU')

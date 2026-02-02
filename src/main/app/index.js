@@ -145,14 +145,33 @@ class App {
     const {
       startUpAction,
       defaultDirectoryToOpen,
+      lastOpenedFolder,
       autoSwitchTheme,
       theme
     } = preferences.getAll()
 
-    if (startUpAction === 'folder' && defaultDirectoryToOpen) {
-      const info = normalizeMarkdownPath(defaultDirectoryToOpen)
-      if (info) {
-        _openFilesCache.unshift(info)
+    // Also try to get lastOpenedFolder directly to verify
+    const lastOpenedFolderDirect = preferences.getItem('lastOpenedFolder')
+    log.info(`[App] Startup config - startUpAction: ${startUpAction}, lastOpenedFolder (getAll): ${lastOpenedFolder}, lastOpenedFolder (getItem): ${lastOpenedFolderDirect}, defaultDirectoryToOpen: ${defaultDirectoryToOpen}`)
+
+    // Only open folders if no files/folders were specified via command line
+    if (_openFilesCache.length === 0) {
+      if (startUpAction === 'folder' && defaultDirectoryToOpen) {
+        const info = normalizeMarkdownPath(defaultDirectoryToOpen)
+        if (info) {
+          _openFilesCache.unshift(info)
+        }
+      } else if ((startUpAction === 'lastState' || startUpAction === 'blank') && lastOpenedFolder && lastOpenedFolder.trim()) {
+        // Open last opened folder if startUpAction is lastState or blank (default)
+        const info = normalizeMarkdownPath(lastOpenedFolder)
+        if (info && info.isDir) {
+          log.info(`[App] Opening last opened folder: ${lastOpenedFolder}`)
+          _openFilesCache.unshift(info)
+        } else {
+          log.warn(`[App] Last opened folder not found or invalid: ${lastOpenedFolder}, info: ${JSON.stringify(info)}`)
+        }
+      } else {
+        log.info(`[App] Not opening last folder - startUpAction: ${startUpAction}, lastOpenedFolder: ${lastOpenedFolder}`)
       }
     }
 

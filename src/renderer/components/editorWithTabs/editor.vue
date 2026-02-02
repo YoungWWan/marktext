@@ -6,6 +6,8 @@
     'font-family': editorFontFamily ? `${editorFontFamily}, ${defaultFontFamily}` : `${defaultFontFamily}` }"
     :dir="textDirection"
   >
+    <!-- AI Diff 显示在编辑器内容区域内部 -->
+    <slot name="diff-overlay"></slot>
     <div
       ref="editor"
       class="editor-component"
@@ -1185,6 +1187,7 @@ export default {
     overflow: auto;
     box-sizing: border-box;
     cursor: default;
+    position: relative;
   }
 
   .typewriter .editor-component {

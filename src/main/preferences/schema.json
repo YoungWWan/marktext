@@ -67,6 +67,10 @@
     "description": "General--The default directory that should be opened on startup when startUp=folder.",
     "type": "string"
   },
+  "lastOpenedFolder": {
+    "description": "General--The last opened folder path, used to restore on startup when startUpAction=lastState.",
+    "type": "string"
+  },
   "language": {
     "description": "General--The language MarkText use.",
     "enum": ["en", "zh-CN"],

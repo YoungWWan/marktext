@@ -214,6 +214,23 @@ export default {
     emptyProject: '空项目',
     createFile: '创建文件'
   },
+  // Sidebar - Context Menu
+  sidebarContextMenu: {
+    newFile: '新建文件',
+    newDirectory: '新建文件夹',
+    copy: '复制',
+    cut: '剪切',
+    paste: '粘贴',
+    rename: '重命名',
+    moveToTrash: '移动到回收站',
+    showInFolder: '在文件夹中显示'
+  },
+  // File Change Notifications
+  fileChange: {
+    changedOnDisk: '"{filename}" 已在磁盘上被修改。是否要重新加载？',
+    removedOnDisk: '"{filename}" 已在磁盘上被删除。',
+    changedByAI: '"{filename}" 已被AI修改。是否接受修改？'
+  },
   // Sidebar - Table of Contents
   toc: {
     title: '目录'
@@ -310,7 +327,9 @@ export default {
     diffPreview: {
       title: 'AI 编辑预览',
       accept: '接受',
-      reject: '拒绝'
+      reject: '拒绝',
+      accepted: '已接受',
+      rejected: '已拒绝'
     },
     alwaysAllow: '始终允许',
     error: '错误',

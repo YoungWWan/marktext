@@ -3,7 +3,22 @@
     <!-- 头部工具栏 -->
     <div class="ai-header">
       <div class="header-left">
-        <span class="title">{{ $t('ai.title') }}</span>
+        <span
+          v-if="!currentSession || editingSessionId !== currentSession.id"
+          class="title"
+          :class="{ 'editable-title': currentSession }"
+          @dblclick="currentSession && startEditSessionTitle(currentSession)"
+          :title="currentSession ? '双击编辑标题' : ''"
+        >{{ currentSession ? currentSession.title : $t('ai.title') }}</span>
+        <input
+          v-else-if="currentSession && editingSessionId === currentSession.id"
+          ref="headerTitleInput"
+          class="header-title-input"
+          v-model="editingSessionTitle"
+          @blur="finishEditSessionTitle(currentSession)"
+          @keydown.enter="finishEditSessionTitle(currentSession)"
+          @keydown.esc="cancelEditSessionTitle"
+        />
         <span
           class="status-indicator"
           :class="{ connected: isConnected, disconnected: !isConnected }"
@@ -58,7 +73,21 @@
           :class="{ active: currentSession && currentSession.id === session.id }"
           @click="selectSession(session)"
         >
-          <div class="session-title">{{ session.title }}</div>
+          <div
+            v-if="editingSessionId !== session.id"
+            class="session-title"
+            @dblclick.stop="startEditSessionTitle(session)"
+          >{{ session.title }}</div>
+          <input
+            v-else
+            ref="sessionTitleInput"
+            class="session-title-input"
+            v-model="editingSessionTitle"
+            @blur="finishEditSessionTitle(session)"
+            @keydown.enter="finishEditSessionTitle(session)"
+            @keydown.esc="cancelEditSessionTitle"
+            @click.stop
+          />
           <div class="session-time">{{ formatTime(session.updatedAt) }}</div>
           <button
             class="delete-btn"
@@ -131,7 +160,9 @@
                     <span class="tool-icon">{{ getToolIcon(item.tool.name) }}</span>
                     <span class="tool-name">{{ item.tool.name }}</span>
                     <span class="tool-status" :class="item.tool.status">
-                      {{ getToolStatusText(item.tool.status) }}
+                      <span v-if="item.tool.diffAction === 'accepted'" class="diff-status-accepted">{{ $t('ai.diffPreview.accepted') }}</span>
+                      <span v-else-if="item.tool.diffAction === 'rejected'" class="diff-status-rejected">{{ $t('ai.diffPreview.rejected') }}</span>
+                      <span v-else>{{ getToolStatusText(item.tool.status) }}</span>
                     </span>
                     <span class="toggle-icon">{{ isToolExpanded(item) ? '▼' : '▶' }}</span>
                   </div>
@@ -139,19 +170,35 @@
                     <!-- Diff预览（内联显示） -->
                     <div v-if="item.tool.diffPreview" class="tool-diff-preview">
                       <div class="diff-preview-header">
-                        <span class="diff-file">{{ item.tool.diffPreview.filePath }}</span>
+                        <span class="diff-file">
+                          {{ item.tool.diffPreview.filePath }}
+                          <span v-if="item.tool.diffAction === 'accepted'" class="diff-action-icon accepted">✓</span>
+                          <span v-else-if="item.tool.diffAction === 'rejected'" class="diff-action-icon rejected">✗</span>
+                        </span>
+                        <span v-if="item.tool.diffPreview.stats" class="diff-stats">
+                          <span class="stat-added">+{{ item.tool.diffPreview.stats.additions }}</span>
+                          <span class="stat-removed">-{{ item.tool.diffPreview.stats.deletions }}</span>
+                        </span>
                       </div>
-                      <div class="diff-preview-content">
+                      <div class="diff-preview-content" ref="diffContent">
                         <div
                           v-for="(line, lineIndex) in item.tool.diffPreview.lines"
                           :key="lineIndex"
-                          class="diff-line"
+                          class="diff-line-wrapper"
                           :class="line.type"
+                          :ref="`diffLine-${lineIndex}`"
                         >
-                          <span class="line-content">{{ line.content }}</span>
+                          <div class="diff-line-bg-layer" :class="line.type"></div>
+                          <div class="diff-line">
+                            <span class="line-marker" :class="line.type">
+                              <span v-if="line.type === 'added'">+</span>
+                              <span v-else-if="line.type === 'removed'">-</span>
+                            </span>
+                            <span class="line-content">{{ line.content }}</span>
+                          </div>
                         </div>
                       </div>
-                      <div class="diff-preview-actions">
+                      <div v-if="!item.tool.diffAction" class="diff-preview-actions">
                         <button class="diff-btn reject-btn" @click="handleToolDiffReject(item.messageId, item.toolIndex)">
                           {{ $t('ai.diffPreview.reject') || '拒绝' }}
                         </button>
@@ -244,6 +291,7 @@
 import { ipcRenderer } from 'electron'
 import { mapState } from 'vuex'
 import { createAIService } from '@/opencode/ai-service'
+import bus from '@/bus'
 
 export default {
   name: 'AiChat',
@@ -261,7 +309,9 @@ export default {
       expandedReasoning: {},
       expandedTools: {},
       aiService: null,
-      abortController: null
+      abortController: null,
+      editingSessionId: null,
+      editingSessionTitle: ''
     }
   },
   computed: {
@@ -308,11 +358,21 @@ export default {
     if (this.hasApiKey) {
       this.initializeService()
     }
+    // 监听编辑器中的diff确认操作
+    bus.$on('ai-diff-action', this.handleEditorDiffAction)
   },
   beforeDestroy () {
     if (this.abortController) {
       this.abortController.abort()
     }
+    // 清理临时会话（没有消息的会话）
+    if (this.currentSession && this.currentSession.isTemporary && this.messages.length === 0) {
+      this.currentSession = null
+    }
+    // 保存会话（会自动过滤掉空会话）
+    this.saveSessions()
+    // 移除事件监听
+    bus.$off('ai-diff-action', this.handleEditorDiffAction)
   },
   methods: {
     openAISettings () {
@@ -345,7 +405,15 @@ export default {
       const sessionsData = localStorage.getItem('ai-sessions')
       if (sessionsData) {
         try {
-          this.sessions = JSON.parse(sessionsData)
+          const loadedSessions = JSON.parse(sessionsData)
+          // 过滤掉空会话（没有消息的会话）
+          this.sessions = loadedSessions.filter(session => {
+            return session.messages && session.messages.length > 0
+          })
+          // 如果过滤后的会话列表与加载的不同，保存更新后的列表
+          if (this.sessions.length !== loadedSessions.length) {
+            this.saveSessions()
+          }
         } catch (e) {
           this.sessions = []
         }
@@ -353,27 +421,39 @@ export default {
     },
 
     saveSessions () {
-      localStorage.setItem('ai-sessions', JSON.stringify(this.sessions))
+      // 过滤掉空会话（没有消息的会话）
+      const sessionsToSave = this.sessions.filter(session => {
+        return session.messages && session.messages.length > 0
+      })
+      localStorage.setItem('ai-sessions', JSON.stringify(sessionsToSave))
+      // 更新本地 sessions，移除空会话
+      this.sessions = sessionsToSave
     },
 
     createNewSession () {
       if (!this.hasApiKey) return
 
+      // 创建一个临时会话，不立即保存到 sessions 列表
+      // 只有在用户发送第一条消息时才会真正保存
       const session = {
         id: Date.now().toString(),
-        title: this.$t('ai.newSession') + ' - ' + new Date().toLocaleString(),
+        title: this.$t('ai.newSession'),
         createdAt: Date.now(),
         updatedAt: Date.now(),
-        messages: []
+        messages: [],
+        isTemporary: true // 标记为临时会话
       }
-      this.sessions.unshift(session)
       this.currentSession = session
       this.messages = []
-      this.saveSessions()
       this.showSessionList = false
     },
 
     selectSession (session) {
+      // 如果当前有临时会话且没有消息，直接丢弃它
+      if (this.currentSession && this.currentSession.isTemporary && this.messages.length === 0) {
+        this.currentSession = null
+      }
+
       this.currentSession = session
       // 兼容旧数据格式：将字符串类型的 reasoning 转换为数组
       const messages = (session.messages || []).map(msg => {
@@ -404,8 +484,60 @@ export default {
       }
     },
 
+    startEditSessionTitle (session) {
+      this.editingSessionId = session.id
+      this.editingSessionTitle = session.title
+      this.$nextTick(() => {
+        // 优先使用头部输入框（如果存在）
+        const headerInput = this.$refs.headerTitleInput
+        if (headerInput) {
+          headerInput.focus()
+          headerInput.select()
+          return
+        }
+        // 否则使用会话列表中的输入框
+        const input = this.$refs.sessionTitleInput
+        if (input && input.length > 0) {
+          input[0].focus()
+          input[0].select()
+        } else if (input) {
+          input.focus()
+          input.select()
+        }
+      })
+    },
+
+    finishEditSessionTitle (session) {
+      if (this.editingSessionId === session.id) {
+        const newTitle = this.editingSessionTitle.trim()
+        if (newTitle) {
+          session.title = newTitle
+          this.saveSessions()
+        } else {
+          // 如果标题为空，恢复原标题
+          this.editingSessionTitle = session.title
+        }
+        this.editingSessionId = null
+        this.editingSessionTitle = ''
+      }
+    },
+
+    cancelEditSessionTitle () {
+      this.editingSessionId = null
+      this.editingSessionTitle = ''
+    },
+
     async sendMessage () {
       if (!this.inputText.trim() || !this.currentSession || !this.aiService) return
+
+      // 如果是临时会话且这是第一条消息，将其添加到 sessions 列表
+      if (this.currentSession.isTemporary && this.messages.length === 0) {
+        // 使用第一条用户消息的前50个字符作为标题
+        const title = this.inputText.trim().slice(0, 50) + (this.inputText.trim().length > 50 ? '...' : '')
+        this.currentSession.title = title
+        this.currentSession.isTemporary = false
+        this.sessions.unshift(this.currentSession)
+      }
 
       const userMessage = {
         id: Date.now().toString(),
@@ -522,34 +654,28 @@ export default {
               tool.status = result.success ? 'completed' : 'error'
               tool.output = result.output
               tool.error = result.error
+
+              // 如果有diff预览信息，自动显示（不阻塞）
+              if (result.diffPreview) {
+                const diffResult = this.calculateDiffLines(result.diffPreview.oldContent || '', result.diffPreview.newContent || '')
+                tool.diffPreview = {
+                  filePath: result.diffPreview.filePath,
+                  oldContent: result.diffPreview.oldContent || '',
+                  newContent: result.diffPreview.newContent || '',
+                  lines: diffResult.lines,
+                  stats: diffResult.stats
+                }
+                tool.status = 'pending-diff'
+                // 等待 DOM 更新后，设置背景层位置
+                this.$nextTick(() => {
+                  this.updateDiffBackgroundLayers()
+                })
+              }
             }
             this.scrollToBottom()
           },
           onPermissionRequest: async (request) => {
-            // 如果是diff预览请求，将diff预览附加到工具调用上
-            if (request.type === 'diff-preview') {
-              return new Promise((resolve) => {
-                // 找到对应的工具调用
-                const tool = assistantMessage.toolCalls.find(t => t.id === request.toolCallId)
-                if (tool) {
-                  // 计算diff行
-                  const diffLines = this.calculateDiffLines(request.oldContent || '', request.newContent || '')
-                  tool.diffPreview = {
-                    filePath: request.filePath,
-                    oldContent: request.oldContent || '',
-                    newContent: request.newContent || '',
-                    lines: diffLines,
-                    resolve
-                  }
-                  tool.status = 'pending-diff'
-                  this.scrollToBottom()
-                } else {
-                  // 如果找不到工具，直接拒绝
-                  resolve(false)
-                }
-              })
-            }
-            // 其他权限请求
+            // 其他权限请求（bash等）
             return new Promise((resolve) => {
               this.pendingPermission = {
                 ...request,
@@ -562,6 +688,18 @@ export default {
         // 更新会话
         this.currentSession.messages = [...this.messages]
         this.currentSession.updatedAt = Date.now()
+        // 如果会话标题还是默认的"新建会话"或者是临时会话，使用第一条用户消息作为标题
+        const defaultTitle = this.$t('ai.newSession')
+        if ((this.currentSession.title === defaultTitle || this.currentSession.isTemporary) && this.messages.length > 0) {
+          const firstUserMessage = this.messages.find(m => m.role === 'user')
+          if (firstUserMessage) {
+            this.currentSession.title = firstUserMessage.content.slice(0, 50) + (firstUserMessage.content.length > 50 ? '...' : '')
+          }
+        }
+        // 确保临时标记被移除
+        if (this.currentSession.isTemporary) {
+          this.currentSession.isTemporary = false
+        }
         this.saveSessions()
       } catch (error) {
         if (error.name === 'AbortError') {
@@ -605,136 +743,90 @@ export default {
       this.pendingPermission = null
     },
 
-    handleToolDiffAccept (messageId, toolIndex) {
+    async handleToolDiffAccept (messageId, toolIndex) {
       const message = this.messages.find(m => m.id === messageId)
       if (!message || !message.toolCalls || !message.toolCalls[toolIndex]) return
 
       const tool = message.toolCalls[toolIndex]
-      if (tool.diffPreview && tool.diffPreview.resolve) {
-        tool.diffPreview.resolve(true)
-        tool.diffPreview = null
-        tool.status = 'running'
+      if (tool.diffPreview) {
+        // 接受：标记为已接受，保持diffPreview和展开状态
+        this.$set(tool, 'diffAction', 'accepted')
+        // 不改变status，保持pending-diff状态，不显示"Successfully edited"
+        // 确保工具保持展开状态
+        const toolId = `${messageId}-${toolIndex}`
+        this.$set(this.expandedTools, toolId, true)
       }
     },
 
-    handleToolDiffReject (messageId, toolIndex) {
+    async handleToolDiffReject (messageId, toolIndex) {
       const message = this.messages.find(m => m.id === messageId)
       if (!message || !message.toolCalls || !message.toolCalls[toolIndex]) return
 
       const tool = message.toolCalls[toolIndex]
-      if (tool.diffPreview && tool.diffPreview.resolve) {
-        tool.diffPreview.resolve(false)
-        tool.status = 'error'
-        tool.error = 'Edit rejected by user'
-        tool.diffPreview = null
-      }
-    },
-
-    calculateDiffLines (oldContent, newContent) {
-      if (!oldContent && !newContent) return []
-
-      const oldLines = oldContent ? oldContent.split('\n') : []
-      const newLines = newContent ? newContent.split('\n') : []
-
-      const lines = []
-      let oldLineNum = 1
-      let newLineNum = 1
-      let oldIndex = 0
-      let newIndex = 0
-
-      // 先找到相同的行
-      while (oldIndex < oldLines.length && newIndex < newLines.length) {
-        if (oldLines[oldIndex] === newLines[newIndex]) {
-          // 相同行
-          lines.push({
-            type: 'context',
-            content: oldLines[oldIndex],
-            oldLine: oldLineNum++,
-            newLine: newLineNum++
+      if (tool.diffPreview) {
+        // 拒绝：回滚文件到原始内容
+        try {
+          const result = await ipcRenderer.invoke('ai:tool:write', {
+            path: tool.diffPreview.filePath,
+            content: tool.diffPreview.oldContent,
+            workingDirectory: this.projectPath
           })
-          oldIndex++
-          newIndex++
-        } else {
-          // 查找下一个匹配的行
-          let foundMatch = false
-          // 尝试在旧内容中查找新行
-          for (let i = oldIndex + 1; i < Math.min(oldIndex + 10, oldLines.length); i++) {
-            if (oldLines[i] === newLines[newIndex]) {
-              // 中间的行被删除
-              for (let j = oldIndex; j < i; j++) {
-                lines.push({
-                  type: 'removed',
-                  content: oldLines[j],
-                  oldLine: oldLineNum++,
-                  newLine: ''
-                })
+
+          if (result.success) {
+            // 标记为已拒绝，保持diffPreview和展开状态
+            this.$set(tool, 'diffAction', 'rejected')
+            // 不改变status，保持pending-diff状态
+            // 确保工具保持展开状态
+            const toolId = `${messageId}-${toolIndex}`
+            this.$set(this.expandedTools, toolId, true)
+
+            // 通知编辑器已拒绝（如果编辑器中有对应的通知）
+            bus.$emit('ai-diff-rejected', {
+              filePath: tool.diffPreview.filePath
+            })
+          } else {
+            tool.status = 'error'
+            tool.error = `Edit rejected by user - failed to revert: ${result.error}`
+            tool.diffPreview = null
+          }
+        } catch (error) {
+          tool.status = 'error'
+          tool.error = `Edit rejected by user - failed to revert: ${error.message}`
+          tool.diffPreview = null
+        }
+      }
+    },
+
+    // 处理编辑器中的diff确认操作
+    handleEditorDiffAction ({ filePath, action }) {
+      // 找到所有包含该文件路径的工具调用
+      for (const message of this.messages) {
+        if (message.role === 'assistant' && message.toolCalls) {
+          for (let i = 0; i < message.toolCalls.length; i++) {
+            const tool = message.toolCalls[i]
+            if (tool.diffPreview && tool.diffPreview.filePath === filePath && !tool.diffAction) {
+              // 同步聊天框中的状态
+              if (action === 'accepted') {
+                this.$set(tool, 'diffAction', 'accepted')
+              } else if (action === 'rejected') {
+                this.$set(tool, 'diffAction', 'rejected')
               }
-              oldIndex = i
-              foundMatch = true
+              const toolId = `${message.id}-${i}`
+              this.$set(this.expandedTools, toolId, true)
               break
             }
           }
-          // 如果没找到，尝试在新内容中查找旧行
-          if (!foundMatch) {
-            for (let i = newIndex + 1; i < Math.min(newIndex + 10, newLines.length); i++) {
-              if (newLines[i] === oldLines[oldIndex]) {
-                // 中间的行被添加
-                for (let j = newIndex; j < i; j++) {
-                  lines.push({
-                    type: 'added',
-                    content: newLines[j],
-                    oldLine: '',
-                    newLine: newLineNum++
-                  })
-                }
-                newIndex = i
-                foundMatch = true
-                break
-              }
-            }
-          }
-          // 如果都没找到，认为是修改
-          if (!foundMatch) {
-            lines.push({
-              type: 'removed',
-              content: oldLines[oldIndex],
-              oldLine: oldLineNum++,
-              newLine: ''
-            })
-            lines.push({
-              type: 'added',
-              content: newLines[newIndex],
-              oldLine: '',
-              newLine: newLineNum++
-            })
-            oldIndex++
-            newIndex++
-          }
         }
       }
+    },
 
-      // 处理剩余的行
-      while (oldIndex < oldLines.length) {
-        lines.push({
-          type: 'removed',
-          content: oldLines[oldIndex],
-          oldLine: oldLineNum++,
-          newLine: ''
-        })
-        oldIndex++
-      }
-
-      while (newIndex < newLines.length) {
-        lines.push({
-          type: 'added',
-          content: newLines[newIndex],
-          oldLine: '',
-          newLine: newLineNum++
-        })
-        newIndex++
-      }
-
-      return lines
+    /**
+     * 计算两个文本的差异，只显示差异部分（不显示上下文）
+     * 返回包含行信息和统计数据的对象
+     */
+    calculateDiffLines (oldContent, newContent) {
+      const { calculateDiffLines } = require('@/util/diff')
+      return calculateDiffLines(oldContent, newContent)
     },
 
     handleKeydown (e) {
@@ -750,6 +842,47 @@ export default {
         if (container) {
           container.scrollTop = container.scrollHeight
         }
+      })
+    },
+
+    updateDiffBackgroundLayers () {
+      this.$nextTick(() => {
+        // 找到所有 diff 预览容器
+        const diffContainers = this.$el.querySelectorAll('.diff-preview-content')
+        diffContainers.forEach(container => {
+          const lineWrappers = container.querySelectorAll('.diff-line-wrapper.added, .diff-line-wrapper.removed')
+          const updateLayers = () => {
+            requestAnimationFrame(() => {
+              lineWrappers.forEach(lineWrapper => {
+                const bgLayer = lineWrapper.querySelector('.diff-line-bg-layer')
+                if (!bgLayer) return
+
+                // wrapper 已经设置为 width: max-content，会自动跟随内容宽度
+                // 背景层使用 width: 100% 就能覆盖整个 wrapper 的宽度
+                // 不需要手动设置宽度，CSS 已经处理好了
+                // 这里只是确保背景层存在且可见
+                bgLayer.style.display = 'block'
+              })
+            })
+          }
+
+          // 初始更新
+          updateLayers()
+
+          // 移除旧的监听器（如果存在）
+          if (container._scrollHandler) {
+            container.removeEventListener('scroll', container._scrollHandler)
+            window.removeEventListener('resize', container._resizeHandler)
+          }
+
+          // 添加新的监听器（在滚动或窗口大小变化时更新）
+          container._scrollHandler = () => {
+            updateLayers()
+          }
+          container._resizeHandler = updateLayers
+          container.addEventListener('scroll', container._scrollHandler, { passive: true })
+          window.addEventListener('resize', container._resizeHandler, { passive: true })
+        })
       })
     },
 
@@ -885,7 +1018,8 @@ export default {
         pending: this.$t('ai.toolPending'),
         running: this.$t('ai.toolRunning'),
         completed: this.$t('ai.toolDone'),
-        error: this.$t('ai.toolError')
+        error: this.$t('ai.toolError'),
+        'pending-diff': this.$t('ai.toolPending') || 'pending'
       }
       return statusMap[status] || status
     },
@@ -941,6 +1075,32 @@ export default {
 .title {
   font-weight: 600;
   font-size: 14px;
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-block;
+}
+
+.title.editable-title {
+  cursor: pointer;
+  user-select: none;
+}
+
+.title.editable-title:hover {
+  opacity: 0.8;
+}
+
+.header-title-input {
+  font-weight: 600;
+  font-size: 14px;
+  max-width: 300px;
+  padding: 2px 4px;
+  border: 1px solid var(--themeColor);
+  border-radius: 2px;
+  background: var(--sideBarBgColor);
+  color: var(--editorColor);
+  outline: none;
 }
 
 .status-indicator {
@@ -1032,12 +1192,13 @@ export default {
 
 .session-item {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   padding: 8px;
+  padding-right: 32px;
   border-radius: 4px;
   cursor: pointer;
   position: relative;
+  gap: 8px;
 }
 
 .session-item:hover {
@@ -1051,15 +1212,31 @@ export default {
 
 .session-title {
   flex: 1;
+  min-width: 0;
   font-size: 12px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  cursor: text;
+}
+
+.session-title-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  padding: 2px 4px;
+  border: 1px solid var(--themeColor);
+  border-radius: 2px;
+  background: var(--sideBarBgColor);
+  color: var(--editorColor);
+  outline: none;
 }
 
 .session-time {
   font-size: 10px;
   color: var(--sideBarIconColor);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .delete-btn {
@@ -1073,6 +1250,8 @@ export default {
   cursor: pointer;
   padding: 4px;
   opacity: 0;
+  flex-shrink: 0;
+  z-index: 1;
 }
 
 .session-item:hover .delete-btn {
@@ -1293,6 +1472,16 @@ export default {
   color: #fff;
 }
 
+.diff-status-accepted {
+  color: #21b56f;
+  font-weight: 500;
+}
+
+.diff-status-rejected {
+  color: #ff6969;
+  font-weight: 500;
+}
+
 .tool-details {
   border-top: 1px solid var(--sideBarTitleBorder);
 }
@@ -1351,6 +1540,7 @@ export default {
 .diff-preview-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
   padding: 8px 12px;
   background: var(--sideBarItemHoverBgColor);
@@ -1365,6 +1555,42 @@ export default {
 .diff-file {
   font-family: monospace;
   color: var(--sideBarColor);
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.diff-action-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: bold;
+  line-height: 1;
+}
+
+.diff-action-icon.accepted {
+  color: #21b56f;
+}
+
+.diff-action-icon.rejected {
+  color: #ff6969;
+}
+
+.diff-stats {
+  display: flex;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.stat-added {
+  color: #21b56f;
+}
+
+.stat-removed {
+  color: #ff6969;
 }
 
 .diff-preview-content {
@@ -1377,36 +1603,83 @@ export default {
   background: var(--sideBarBgColor);
   flex: 1;
   min-height: 0;
+  width: 100%;
+  box-sizing: border-box;
+  position: relative;
   /* Firefox 滚动条 */
   scrollbar-width: thin;
   scrollbar-color: var(--sideBarItemHoverBgColor) var(--sideBarBgColor);
 }
 
+.diff-line-wrapper {
+  position: relative;
+  min-height: 1.6em;
+  width: max-content;
+  min-width: 100%;
+  overflow: visible;
+}
+
+.diff-line-bg-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 0;
+  pointer-events: none;
+  box-sizing: border-box;
+  width: 100%;
+  /* 背景层会自动覆盖整个 wrapper 的宽度，wrapper 会根据内容自动扩展 */
+}
+
+.diff-line-bg-layer.added {
+  background: rgba(33, 181, 111, 0.15);
+}
+
+.diff-line-bg-layer.removed {
+  background: rgba(255, 105, 105, 0.15);
+}
+
 /* Webkit 滚动条样式（Chrome/Electron） */
 .diff-preview-content::-webkit-scrollbar {
-  width: 12px;
-  height: 12px;
-  display: block;
+  width: 8px;
+  height: 8px;
+  background: var(--sideBarBgColor);
+}
+
+.diff-preview-content::-webkit-scrollbar:vertical {
+  width: 8px;
+  background: var(--sideBarBgColor);
+}
+
+.diff-preview-content::-webkit-scrollbar:horizontal {
+  height: 8px;
+  background: var(--sideBarBgColor);
 }
 
 .diff-preview-content::-webkit-scrollbar-thumb {
   background-color: var(--sideBarItemHoverBgColor);
-  border-radius: 6px;
-  border: 2px solid transparent;
-  background-clip: padding-box;
-  min-height: 20px;
-  min-width: 20px;
+  border-radius: 4px;
 }
 
 .diff-preview-content::-webkit-scrollbar-thumb:hover {
   background-color: var(--sideBarTitleBorder);
 }
 
+.diff-preview-content::-webkit-scrollbar-thumb:active {
+  background-color: var(--sideBarTitleBorder);
+}
+
 .diff-preview-content::-webkit-scrollbar-track {
   background-color: var(--sideBarBgColor) !important;
-  border-radius: 0;
-  -webkit-box-shadow: inset 0 0 0 var(--sideBarBgColor);
-  box-shadow: inset 0 0 0 var(--sideBarBgColor);
+  border: none;
+}
+
+.diff-preview-content::-webkit-scrollbar-track:vertical {
+  background-color: var(--sideBarBgColor) !important;
+}
+
+.diff-preview-content::-webkit-scrollbar-track:horizontal {
+  background-color: var(--sideBarBgColor) !important;
 }
 
 .diff-preview-content::-webkit-scrollbar-corner {
@@ -1415,29 +1688,52 @@ export default {
 
 .diff-line {
   display: flex;
+  min-width: 100%;
+  width: max-content;
   padding: 2px 0;
   white-space: pre;
   position: relative;
+  font-family: 'Courier New', monospace;
+  line-height: 1.6;
+  box-sizing: border-box;
+  z-index: 1;
+  background: transparent;
 }
 
-.diff-line.context {
-  background: var(--sideBarBgColor);
-  color: var(--sideBarColor);
-}
-
-.diff-line.added {
-  background: rgba(33, 181, 111, 0.1);
+.diff-line-wrapper.added .diff-line {
   color: var(--editorColor);
 }
 
-.diff-line.removed {
-  background: rgba(255, 105, 105, 0.1);
+.diff-line-wrapper.removed .diff-line {
   color: var(--editorColor);
+}
+
+.line-marker {
+  display: inline-block;
+  min-width: 24px;
+  padding: 2px 8px;
+  text-align: center;
+  font-weight: bold;
+  font-size: 12px;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.line-marker.added {
+  color: #21b56f;
+}
+
+.line-marker.removed {
+  color: #ff6969;
 }
 
 .diff-line .line-content {
   flex: 1;
-  padding: 2px 12px;
+  min-width: 0;
+  padding: 2px 8px;
+  word-break: break-all;
+  overflow-wrap: break-word;
+  box-sizing: border-box;
 }
 
 .diff-preview-actions {

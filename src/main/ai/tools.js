@@ -27,7 +27,7 @@ export function initToolHandlers () {
   })
 
   // 写入文件
-  ipcMain.handle('ai:tool:write', async (event, { path: filePath, content, workingDirectory }) => {
+  ipcMain.handle('ai:tool:write', async (event, { path: filePath, content, workingDirectory, oldContent, diffPreview }) => {
     try {
       const fullPath = path.isAbsolute(filePath) ? filePath : path.join(workingDirectory, filePath)
 
@@ -35,6 +35,20 @@ export function initToolHandlers () {
       await fs.mkdir(path.dirname(fullPath), { recursive: true })
 
       await fs.writeFile(fullPath, content, 'utf-8')
+
+      // 如果是AI修改的文件，发送特殊消息标记
+      if (oldContent !== undefined || diffPreview) {
+        const win = event.sender.getOwnerBrowserWindow()
+        if (win) {
+          win.webContents.send('mt::ai-file-modified', {
+            pathname: fullPath,
+            oldContent: oldContent || '',
+            newContent: content,
+            diffPreview: diffPreview || null
+          })
+        }
+      }
+
       return { success: true, output: `Successfully wrote to ${filePath}` }
     } catch (error) {
       return { success: false, error: error.message }
@@ -42,7 +56,7 @@ export function initToolHandlers () {
   })
 
   // 编辑文件
-  ipcMain.handle('ai:tool:edit', async (event, { path: filePath, oldString, newString, workingDirectory }) => {
+  ipcMain.handle('ai:tool:edit', async (event, { path: filePath, oldString, newString, workingDirectory, diffPreview }) => {
     try {
       const fullPath = path.isAbsolute(filePath) ? filePath : path.join(workingDirectory, filePath)
       const content = await fs.readFile(fullPath, 'utf-8')
@@ -53,6 +67,20 @@ export function initToolHandlers () {
 
       const newContent = content.replace(oldString, newString)
       await fs.writeFile(fullPath, newContent, 'utf-8')
+
+      // 如果是AI修改的文件，发送特殊消息标记
+      if (diffPreview) {
+        const win = event.sender.getOwnerBrowserWindow()
+        if (win) {
+          win.webContents.send('mt::ai-file-modified', {
+            pathname: fullPath,
+            oldContent: content,
+            newContent: newContent,
+            diffPreview: diffPreview
+          })
+        }
+      }
+
       return { success: true, output: `Successfully edited ${filePath}` }
     } catch (error) {
       return { success: false, error: error.message }
