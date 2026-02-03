@@ -251,6 +251,13 @@ export default {
   editorHints: {
     typeToInsert: 'Type @ to insert'
   },
+  // View
+  view: {
+    sourceCode: 'Source Code',
+    preview: 'Preview',
+    showSourceCode: 'Show Source Code',
+    hideSourceCode: 'Hide Source Code'
+  },
   // AI Settings Page
   aiSettings: {
     title: 'AI',

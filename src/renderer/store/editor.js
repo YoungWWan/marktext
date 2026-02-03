@@ -981,6 +981,14 @@ const actions = {
     if (markdown !== oldMarkdown) {
       commit('SET_SAVE_STATUS', false)
 
+      // If update comes from source code editor (not muya), trigger file-changed event
+      // to sync preview editor, but only if markdown actually changed
+      if (id !== 'muya' && id === currentId) {
+        // Pass cursor for scroll sync, but set renderCursor to false to prevent focus switching
+        // Preview editor will use cursor position to scroll without setting cursor
+        bus.$emit('file-changed', { id: currentId, markdown, cursor, renderCursor: false, history })
+      }
+
       // Save file is auto save is enable and file exist on disk.
       if (pathname && autoSave) {
         const options = getOptionsFromState(state.currentFile)

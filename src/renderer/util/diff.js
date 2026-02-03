@@ -51,6 +51,7 @@ export function computeLCS (oldLines, newLines) {
 /**
  * 计算两个文本的差异，只显示差异部分（不显示上下文）
  * 返回包含行信息和统计数据的对象
+ * 每行包含：type (removed/added), content, oldLineNumber (在旧文档中的行号，从1开始), newLineNumber (在新文档中的行号，从1开始)
  */
 export function calculateDiffLines (oldContent, newContent) {
   if (!oldContent && !newContent) {
@@ -79,21 +80,25 @@ export function calculateDiffLines (oldContent, newContent) {
     const nextMatchOldIndex = nextMatch ? nextMatch.oldIndex : oldLines.length
     const nextMatchNewIndex = nextMatch ? nextMatch.newIndex : newLines.length
 
-    // 收集删除的行
+    // 收集删除的行（行号从1开始）
     while (oldIndex < oldLines.length && oldIndex < nextMatchOldIndex) {
       lines.push({
         type: 'removed',
-        content: oldLines[oldIndex]
+        content: oldLines[oldIndex],
+        oldLineNumber: oldIndex + 1, // 行号从1开始
+        newLineNumber: null // 删除的行在新文档中不存在
       })
       deletions++
       oldIndex++
     }
 
-    // 收集添加的行
+    // 收集添加的行（行号从1开始）
     while (newIndex < newLines.length && newIndex < nextMatchNewIndex) {
       lines.push({
         type: 'added',
-        content: newLines[newIndex]
+        content: newLines[newIndex],
+        oldLineNumber: null, // 新增的行在旧文档中不存在
+        newLineNumber: newIndex + 1 // 行号从1开始
       })
       additions++
       newIndex++

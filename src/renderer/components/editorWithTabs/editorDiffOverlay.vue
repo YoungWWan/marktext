@@ -42,7 +42,11 @@
             <span v-if="line.type === 'added'">+</span>
             <span v-else-if="line.type === 'removed'">-</span>
           </span>
-          <span class="line-content">{{ line.content }}</span>
+          <span
+            class="line-content"
+            :class="line.type"
+            v-html="renderMarkdownLine(line.content)"
+          ></span>
         </div>
       </div>
     </div>
@@ -53,6 +57,7 @@
 import { mapState } from 'vuex'
 import bus from '@/bus'
 import { calculateDiffLines } from '@/util/diff'
+import marked from 'muya/lib/parser/marked'
 
 export default {
   name: 'EditorDiffOverlay',
@@ -61,7 +66,10 @@ export default {
       diffLines: [],
       diffStats: { additions: 0, deletions: 0 },
       diffLineIndex: -1,
-      editorElement: null
+      editorElement: null,
+      targetLineElement: null,
+      isInserting: false,
+      insertTimer: null
     }
   },
   mounted () {
@@ -74,12 +82,13 @@ export default {
     })
   },
   updated () {
-    // 当 diff 内容更新时，重新插入
-    this.$nextTick(() => {
-      setTimeout(() => {
-        this.insertDiffIntoEditor()
-      }, 100)
-    })
+    // 当 diff 内容更新时，重新插入（使用防抖）
+    if (this.insertTimer) {
+      clearTimeout(this.insertTimer)
+    }
+    this.insertTimer = setTimeout(() => {
+      this.insertDiffIntoEditor()
+    }, 200)
   },
   beforeDestroy () {
     // 清理：如果 diff 被移到了编辑器内部，需要移除
@@ -127,11 +136,13 @@ export default {
       handler (aiFileInfo) {
         if (aiFileInfo) {
           this.calculateAndShowDiff(aiFileInfo)
-          this.$nextTick(() => {
-            setTimeout(() => {
-              this.insertDiffIntoEditor()
-            }, 300)
-          })
+          // 使用防抖，避免重复调用
+          if (this.insertTimer) {
+            clearTimeout(this.insertTimer)
+          }
+          this.insertTimer = setTimeout(() => {
+            this.insertDiffIntoEditor()
+          }, 300)
         }
       }
     },
@@ -139,12 +150,13 @@ export default {
       deep: true,
       immediate: true,
       handler () {
-        // 当通知数组变化时，触发重新计算和插入
-        this.$nextTick(() => {
-          setTimeout(() => {
-            this.insertDiffIntoEditor()
-          }, 300)
-        })
+        // 当通知数组变化时，触发重新计算和插入（使用防抖）
+        if (this.insertTimer) {
+          clearTimeout(this.insertTimer)
+        }
+        this.insertTimer = setTimeout(() => {
+          this.insertDiffIntoEditor()
+        }, 300)
       }
     }
   },
@@ -166,31 +178,27 @@ export default {
       this.calculateDiffPosition(aiFileInfo)
     },
     calculateDiffPosition (aiFileInfo) {
-      // 找到第一个变更的行号
+      // 找到第一个变更的行号（使用新的行号信息）
       if (!this.diffLines || this.diffLines.length === 0) {
+        this.diffLineIndex = -1
         return
       }
 
-      const oldContent = aiFileInfo.oldContent || ''
-      const oldLines = oldContent.split('\n')
-
-      // 找到第一个变更行的位置
-      let changeLineIndex = -1
+      // 找到第一个有行号的变更行（优先使用oldLineNumber，因为我们要在旧文档中定位）
+      let changeLineNumber = -1
       for (let i = 0; i < this.diffLines.length; i++) {
         const diffLine = this.diffLines[i]
-        if (diffLine.type === 'removed' || diffLine.type === 'added') {
-          // 在旧内容中找到这一行的位置
-          for (let j = 0; j < oldLines.length; j++) {
-            if (diffLine.type === 'removed' && oldLines[j] === diffLine.content) {
-              changeLineIndex = j
-              break
-            }
-          }
-          if (changeLineIndex >= 0) break
+        if (diffLine.oldLineNumber !== null && diffLine.oldLineNumber !== undefined) {
+          changeLineNumber = diffLine.oldLineNumber
+          break
+        } else if (diffLine.newLineNumber !== null && diffLine.newLineNumber !== undefined) {
+          // 如果只有newLineNumber，使用它（但需要减去之前删除的行数）
+          changeLineNumber = diffLine.newLineNumber
+          break
         }
       }
 
-      this.diffLineIndex = changeLineIndex
+      this.diffLineIndex = changeLineNumber > 0 ? changeLineNumber - 1 : -1 // 转换为0-based索引
     },
     insertDiffIntoEditor () {
       if (!this.currentNotification || !this.currentNotification.aiFileInfo) {
@@ -200,6 +208,13 @@ export default {
       if (!this.$el) {
         return
       }
+
+      // 防止重复插入
+      if (this.isInserting) {
+        return
+      }
+
+      this.isInserting = true
 
       // 将 diff 组件插入到编辑器内容区域
       // 首先尝试从当前元素向上查找
@@ -227,44 +242,240 @@ export default {
         return
       }
 
-      // Muya 编辑器会替换 editor-component，所以 editor-component 本身就是 Muya 的容器
-      // 但是 Muya 会在内部创建一个 contenteditable 的 div，我们需要找到它
-      // 根据 Muya 的代码，container 是 contenteditable 的 div，rootDom 是它的子元素
+      // Muya 编辑器结构：
+      // container (contenteditable div) -> rootDom (div#ag-editor-id) -> 段落元素
+      // 我们需要找到 rootDom，因为段落元素是 rootDom 的直接子节点
       let muyaContainer = null
+      let muyaRootDom = null
 
       // 首先检查 editor-component 是否有 contenteditable 属性（说明它已经被 Muya 替换）
       if (editorComponent.hasAttribute('contenteditable')) {
-        // editor-component 本身就是 Muya 的容器
+        // editor-component 本身就是 Muya 的 container
         muyaContainer = editorComponent
+        // 查找 rootDom（id 为 ag-editor-id 的 div）
+        muyaRootDom = editorComponent.querySelector('div#ag-editor-id') || editorComponent.querySelector('div')
       } else {
-        // 查找 contenteditable 的元素（Muya 的容器）
+        // 查找 contenteditable 的元素（Muya 的 container）
         muyaContainer = editorComponent.querySelector('[contenteditable="true"]')
-
-        // 如果还是找不到，尝试查找第一个 div 子元素（可能是 Muya 的 rootDom）
-        if (!muyaContainer) {
-          const firstDiv = editorComponent.querySelector('div')
-          if (firstDiv) {
-            muyaContainer = firstDiv
+        if (muyaContainer) {
+          // 在 container 中查找 rootDom
+          muyaRootDom = muyaContainer.querySelector('div#ag-editor-id') || muyaContainer.querySelector('div')
+        } else {
+          // 如果找不到 container，尝试直接查找 rootDom
+          muyaRootDom = editorComponent.querySelector('div#ag-editor-id') || editorComponent.querySelector('div')
+          if (muyaRootDom) {
+            muyaContainer = muyaRootDom.parentNode
           }
         }
       }
 
-      console.log('[EditorDiffOverlay] muyaContainer:', muyaContainer, 'editorComponent:', editorComponent, 'hasContentEditable:', editorComponent.hasAttribute('contenteditable'), 'children:', editorComponent.children.length)
+      if (!muyaContainer) {
+        console.log('[EditorDiffOverlay] Cannot find muyaContainer')
+        return
+      }
 
-      if (muyaContainer) {
-        // 检查是否已经插入
-        if (this.$el.parentNode !== muyaContainer) {
-          // 将 diff 插入到 Muya 容器的开头，作为文档的一部分
-          muyaContainer.insertBefore(this.$el, muyaContainer.firstChild)
-          console.log('[EditorDiffOverlay] Inserted into muyaContainer')
-        }
-      } else {
-        // 如果找不到 Muya 容器，插入到 editor-component 的开头
-        if (this.$el.parentNode !== editorComponent) {
-          editorComponent.insertBefore(this.$el, editorComponent.firstChild)
-          console.log('[EditorDiffOverlay] Inserted into editor-component (fallback)')
+      // 如果没有找到 rootDom，使用 container 作为插入目标
+      const insertTarget = muyaRootDom || muyaContainer
+      console.log('[EditorDiffOverlay] Insert target:', {
+        container: muyaContainer,
+        rootDom: muyaRootDom,
+        insertTarget: insertTarget,
+        containerChildren: Array.from(muyaContainer.children).map(c => c.tagName + (c.id ? '#' + c.id : '')),
+        rootDomChildren: muyaRootDom ? Array.from(muyaRootDom.children).map(c => c.tagName + (c.className || '')) : []
+      })
+
+      // 检查元素是否已经在正确位置
+      // 如果元素已经在 insertTarget 中，且位置正确，就不需要重新插入
+      if (this.$el.parentNode === insertTarget) {
+        // 检查是否在正确位置（在目标元素之前）
+        const targetElement = this.findLineElementInEditor(insertTarget)
+        if (targetElement) {
+          // 检查当前元素是否在目标元素之前
+          const currentIndex = Array.from(insertTarget.children).indexOf(this.$el)
+          const targetIndex = Array.from(insertTarget.children).indexOf(targetElement)
+          if (currentIndex >= 0 && targetIndex >= 0 && currentIndex < targetIndex) {
+            // 已经在正确位置，不需要重新插入
+            this.isInserting = false
+            return
+          }
+        } else {
+          // 如果找不到目标元素，但元素已经在容器中，也认为位置正确
+          this.isInserting = false
+          return
         }
       }
+
+      // 尝试定位到编辑器中的特定行（在 insertTarget 中查找）
+      this.targetLineElement = this.findLineElementInEditor(insertTarget)
+
+      // 如果元素已经在DOM中，先移除它
+      if (this.$el.parentNode) {
+        this.$el.parentNode.removeChild(this.$el)
+      }
+
+      if (this.targetLineElement) {
+        // 验证目标元素是否是 insertTarget 的直接子节点
+        if (this.targetLineElement.parentNode === insertTarget) {
+          try {
+            insertTarget.insertBefore(this.$el, this.targetLineElement)
+            console.log('[EditorDiffOverlay] Inserted before target line element:', this.targetLineElement.textContent?.substring(0, 30))
+            this.isInserting = false
+            return
+          } catch (error) {
+            console.warn('[EditorDiffOverlay] Failed to insert before target element:', error)
+            // 如果失败，继续执行fallback逻辑
+          }
+        } else {
+          // 目标元素不是直接子节点，向上查找直到找到 insertTarget 的直接子节点
+          let insertBeforeElement = this.targetLineElement
+          let parent = this.targetLineElement.parentNode
+
+          while (parent && parent !== insertTarget && parent !== document.body && parent !== document) {
+            insertBeforeElement = parent
+            parent = parent.parentNode
+          }
+
+          // 如果找到了 insertTarget 的直接子节点，使用它
+          if (insertBeforeElement.parentNode === insertTarget) {
+            try {
+              insertTarget.insertBefore(this.$el, insertBeforeElement)
+              console.log('[EditorDiffOverlay] Inserted before target parent element:', insertBeforeElement.textContent?.substring(0, 30))
+              this.isInserting = false
+              return
+            } catch (error) {
+              console.warn('[EditorDiffOverlay] Failed to insert before target parent element:', error)
+            }
+          } else {
+            console.warn('[EditorDiffOverlay] Target element is not a descendant of insertTarget', {
+              targetParent: this.targetLineElement.parentNode,
+              insertTarget: insertTarget,
+              targetElement: this.targetLineElement
+            })
+          }
+        }
+      }
+
+      // 如果找不到目标行或插入失败，尝试插入到文档中第一个匹配的位置
+      // 或者插入到开头
+      try {
+        // 再次尝试查找，这次使用更宽松的匹配
+        const fallbackElement = this.findLineElementInEditor(insertTarget)
+        if (fallbackElement && fallbackElement.parentNode === insertTarget) {
+          insertTarget.insertBefore(this.$el, fallbackElement)
+          console.log('[EditorDiffOverlay] Inserted into insertTarget (fallback match)')
+          this.isInserting = false
+          return
+        }
+
+        // 如果还是找不到，插入到第一个块元素之前
+        const firstBlock = insertTarget.querySelector('p, h1, h2, h3, h4, h5, h6, blockquote, pre, li, div.ag-paragraph')
+        if (firstBlock && firstBlock.parentNode === insertTarget) {
+          insertTarget.insertBefore(this.$el, firstBlock)
+          console.log('[EditorDiffOverlay] Inserted into insertTarget (before first block)')
+          this.isInserting = false
+          return
+        }
+
+        // 最后的fallback：插入到开头
+        if (insertTarget.firstChild) {
+          insertTarget.insertBefore(this.$el, insertTarget.firstChild)
+          console.log('[EditorDiffOverlay] Inserted into insertTarget (fallback to first)')
+        } else {
+          insertTarget.appendChild(this.$el)
+          console.log('[EditorDiffOverlay] Inserted into insertTarget (fallback append)')
+        }
+      } catch (error) {
+        console.error('[EditorDiffOverlay] Failed to insert diff overlay:', error)
+        // 最后的fallback：尝试直接append
+        try {
+          insertTarget.appendChild(this.$el)
+          console.log('[EditorDiffOverlay] Inserted via appendChild (last resort)')
+        } catch (appendError) {
+          console.error('[EditorDiffOverlay] All insertion methods failed:', appendError)
+        }
+      } finally {
+        this.isInserting = false
+      }
+    },
+    findLineElementInEditor (insertTarget) {
+      // 尝试通过内容匹配找到对应的行元素
+      if (this.diffLineIndex < 0 || !this.diffLines || this.diffLines.length === 0) {
+        return null
+      }
+
+      // 获取第一个变更行的内容（用于匹配），优先使用removed行
+      const firstDiffLine = this.diffLines.find(line =>
+        line.type === 'removed' && line.oldLineNumber !== null && line.oldLineNumber !== undefined
+      ) || this.diffLines.find(line =>
+        line.oldLineNumber !== null && line.oldLineNumber !== undefined
+      ) || this.diffLines[0]
+
+      if (!firstDiffLine) {
+        return null
+      }
+
+      // 在Muya编辑器中查找包含该内容的块元素
+      // Muya使用块结构，每个块可能包含多行，我们需要找到最接近的块
+      const searchText = firstDiffLine.content.trim()
+      if (!searchText) {
+        // 如果内容为空，尝试通过行号定位
+        return this.findElementByLineNumber(insertTarget)
+      }
+
+      // 查找所有块元素（p, h1-h6, blockquote等）
+      const blockElements = insertTarget.querySelectorAll('p, h1, h2, h3, h4, h5, h6, blockquote, pre, li, div.ag-paragraph')
+
+      // 首先尝试精确匹配
+      for (const block of blockElements) {
+        const blockText = (block.textContent || '').trim()
+        // 精确匹配或包含匹配
+        if (blockText === searchText || blockText.includes(searchText) || searchText.includes(blockText)) {
+          console.log('[EditorDiffOverlay] Found matching block by content:', blockText.substring(0, 50))
+          return block
+        }
+      }
+
+      // 如果找不到精确匹配，尝试通过行号定位
+      return this.findElementByLineNumber(insertTarget)
+    },
+    findElementByLineNumber (insertTarget) {
+      // 通过行号估算位置
+      const allBlocks = Array.from(insertTarget.querySelectorAll('p, h1, h2, h3, h4, h5, h6, blockquote, pre, li, div.ag-paragraph'))
+      if (allBlocks.length > 0) {
+        // 使用行号索引，但确保不越界
+        const targetIndex = Math.min(this.diffLineIndex, allBlocks.length - 1)
+        const targetBlock = allBlocks[targetIndex]
+        console.log('[EditorDiffOverlay] Found block by line number:', targetIndex, targetBlock.textContent?.substring(0, 50))
+        return targetBlock
+      }
+      return null
+    },
+    renderMarkdownLine (content) {
+      if (!content) return ''
+
+      try {
+        // 使用marked渲染单行markdown
+        const html = marked(content)
+
+        // 清理HTML，移除可能的p标签包装（因为单行可能被包装在p中）
+        let cleanedHtml = html.replace(/^<p>|<\/p>$/g, '').trim()
+
+        // 如果清理后为空，说明可能是纯文本，返回原内容
+        if (!cleanedHtml) {
+          cleanedHtml = this.escapeHtml(content)
+        }
+
+        return cleanedHtml
+      } catch (error) {
+        console.error('[EditorDiffOverlay] Error rendering markdown:', error)
+        // 如果渲染失败，返回转义的HTML
+        return this.escapeHtml(content)
+      }
+    },
+    escapeHtml (text) {
+      const div = document.createElement('div')
+      div.textContent = text
+      return div.innerHTML
     },
     getFileName (filePath) {
       if (!filePath) return ''
@@ -433,9 +644,9 @@ export default {
   min-width: 100%;
   width: max-content;
   padding: 2px 0;
-  white-space: pre;
   position: relative;
   z-index: 1;
+  align-items: flex-start;
 }
 
 .line-marker {
@@ -461,5 +672,49 @@ export default {
   flex: 1;
   min-width: 0;
   padding: 2px 8px;
+  word-wrap: break-word;
+}
+
+/* 删除行的样式 - 红色删除线 */
+.line-content.removed {
+  color: #ff6969;
+  text-decoration: line-through;
+  opacity: 0.8;
+}
+
+/* 新增行的样式 - 绿色 */
+.line-content.added {
+  color: #21b56f;
+}
+
+/* 确保markdown渲染的内容也能正确显示样式 */
+.line-content.removed ::v-deep h1,
+.line-content.removed ::v-deep h2,
+.line-content.removed ::v-deep h3,
+.line-content.removed ::v-deep h4,
+.line-content.removed ::v-deep h5,
+.line-content.removed ::v-deep h6,
+.line-content.removed ::v-deep p,
+.line-content.removed ::v-deep span,
+.line-content.removed ::v-deep div,
+.line-content.removed ::v-deep strong,
+.line-content.removed ::v-deep em {
+  color: #ff6969 !important;
+  text-decoration: line-through !important;
+  opacity: 0.8;
+}
+
+.line-content.added ::v-deep h1,
+.line-content.added ::v-deep h2,
+.line-content.added ::v-deep h3,
+.line-content.added ::v-deep h4,
+.line-content.added ::v-deep h5,
+.line-content.added ::v-deep h6,
+.line-content.added ::v-deep p,
+.line-content.added ::v-deep span,
+.line-content.added ::v-deep div,
+.line-content.added ::v-deep strong,
+.line-content.added ::v-deep em {
+  color: #21b56f !important;
 }
 </style>

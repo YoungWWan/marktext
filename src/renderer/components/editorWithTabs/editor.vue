@@ -192,7 +192,10 @@ export default {
       tableChecker: {
         rows: 4,
         columns: 3
-      }
+      },
+      scrollSyncTimer: null, // Timer for debouncing scroll sync
+      isSyncingScroll: false, // Flag to prevent scroll sync loops
+      lastSyncLine: -1 // Last synced line to avoid unnecessary updates
     }
   },
 
@@ -1085,21 +1088,154 @@ export default {
     // listen for markdown change form source mode or change tabs etc
     handleFileChange ({ id, markdown, cursor, renderCursor, history }) {
       const { editor } = this
+      // Don't update if source code mode is active (user is editing in source code)
+      if (this.sourceCode) {
+        return
+      }
       this.$nextTick(() => {
         if (editor) {
           if (history) {
             editor.setHistory(history)
           }
           if (typeof markdown === 'string') {
-            editor.setMarkdown(markdown, cursor, renderCursor)
+            // If renderCursor is true and editor has focus, set cursor normally
+            // Otherwise, just update markdown without setting cursor to prevent focus switching
+            const shouldRenderCursor = renderCursor && cursor && editor.hasFocus()
+            editor.setMarkdown(markdown, shouldRenderCursor ? cursor : null, shouldRenderCursor)
+
+            // If we have cursor but renderCursor is false (from source code editor),
+            // don't scroll here - let scroll sync handle it for better accuracy
+            // This prevents conflicts with the new scroll event-based sync
+            if (shouldRenderCursor) {
+              // Normal cursor rendering when editor has focus
+              setTimeout(() => {
+                if (editor.hasFocus()) {
+                  this.scrollToCursor(0)
+                }
+              }, 50)
+            }
           } else if (cursor) {
-            editor.setCursor(cursor)
-          }
-          if (renderCursor) {
-            this.scrollToCursor(0)
+            if (renderCursor && editor.hasFocus()) {
+              // Only set cursor if editor has focus to prevent focus switching
+              editor.setCursor(cursor)
+              this.scrollToCursor(0)
+            }
+            // If renderCursor is false, don't scroll here - let scroll sync handle it
           }
         }
       })
+    },
+
+    // Scroll to cursor position without setting cursor or switching focus
+    scrollToCursorPosition (cursor, setCursor = false) {
+      if (!cursor || !cursor.focus) {
+        return
+      }
+
+      const { editor } = this
+      if (!editor) {
+        return
+      }
+
+      // Don't scroll if editor has focus (user is editing in preview)
+      // Only scroll when user is editing in source code
+      if (editor.hasFocus()) {
+        return
+      }
+
+      // Save current focus state to restore later
+      const activeElement = document.activeElement
+
+      try {
+        // Cursor format from source code editor is { line, ch } (CodeMirror format)
+        // We need to convert this to Muya's internal format and find the corresponding DOM element
+        const { focus } = cursor
+        if (focus && typeof focus.line === 'number') {
+          this.$nextTick(() => {
+            try {
+              const { container } = editor
+              const markdown = editor.getMarkdown()
+              const lines = markdown.split('\n')
+
+              // Check if line is valid
+              if (focus.line >= 0 && focus.line < lines.length) {
+                // Try to find the DOM element corresponding to this line
+                // Muya stores blocks with keys, we can try to find elements by content
+                const targetLineText = lines[focus.line]
+                if (targetLineText) {
+                  // Find all paragraph/block elements and try to match by content
+                  const allBlocks = container.querySelectorAll('p, h1, h2, h3, h4, h5, h6, blockquote, pre, li, div.ag-paragraph')
+                  let targetElement = null
+
+                  // Try to find element by matching text content
+                  for (const block of allBlocks) {
+                    const blockText = block.textContent || ''
+                    // Match if the block contains the line text or vice versa
+                    if (blockText.trim() === targetLineText.trim() ||
+                        blockText.includes(targetLineText.trim()) ||
+                        targetLineText.trim().includes(blockText.trim())) {
+                      targetElement = block
+                      break
+                    }
+                  }
+
+                  if (targetElement) {
+                    // Found matching element, scroll to it precisely
+                    const elementRect = targetElement.getBoundingClientRect()
+                    const containerRect = container.getBoundingClientRect()
+                    const elementTop = elementRect.top - containerRect.top + container.scrollTop
+                    const targetScroll = elementTop - STANDAR_Y
+
+                    animatedScrollTo(container, Math.max(0, targetScroll), 0)
+                  } else {
+                    // Fallback: estimate by line number with better calculation
+                    const { fontSize, lineHeight } = editor.options || {}
+                    const lineHeightValue = (fontSize || 16) * (lineHeight || 1.6)
+                    // Account for padding and margins
+                    const estimatedY = focus.line * lineHeightValue + 50 // Add some padding
+                    const targetScroll = Math.max(0, estimatedY - STANDAR_Y)
+
+                    animatedScrollTo(container, targetScroll, 0)
+                  }
+                } else {
+                  // Empty line, use line number estimation
+                  const { fontSize, lineHeight } = editor.options || {}
+                  const lineHeightValue = (fontSize || 16) * (lineHeight || 1.6)
+                  const estimatedY = focus.line * lineHeightValue
+                  const targetScroll = Math.max(0, estimatedY - STANDAR_Y)
+
+                  animatedScrollTo(container, targetScroll, 0)
+                }
+              }
+
+              // Ensure focus stays on the original element (source code editor)
+              // Use a small delay to ensure scroll completes first
+              setTimeout(() => {
+                try {
+                  // Only restore focus if it's not already on the source code editor
+                  if (activeElement && activeElement !== editor.container) {
+                    const sourceCodeEditor = document.querySelector('.source-code .CodeMirror')
+                    if (sourceCodeEditor && (activeElement === sourceCodeEditor || sourceCodeEditor.contains(activeElement))) {
+                      // Focus is on source code editor, don't change it
+                      return
+                    }
+                    // Restore focus to original element
+                    if (document.activeElement !== activeElement) {
+                      activeElement.focus()
+                    }
+                  }
+                } catch (e) {
+                  // Ignore focus errors
+                }
+              }, 50)
+            } catch (e) {
+              console.warn('[Editor] Failed to scroll to cursor position:', e)
+            }
+          })
+        }
+      } catch (e) {
+        console.warn('[Editor] Failed to scroll to cursor position:', e)
+      }
     },
 
     handleInsertParagraph (location) {
@@ -1119,6 +1255,165 @@ export default {
       if (this.editor) {
         document.execCommand('paste')
       }
+    },
+
+    // Sync scroll to source code editor based on cursor position
+    syncScrollToSource (changes) {
+      // Only sync when user is actively editing in preview (not during external updates)
+      if (!this.editor || !this.editor.hasFocus() || this.sourceCode || this.isSyncingScroll) {
+        return
+      }
+
+      // Debounce to avoid too frequent updates during typing
+      if (this.scrollSyncTimer) {
+        clearTimeout(this.scrollSyncTimer)
+      }
+
+      this.scrollSyncTimer = setTimeout(() => {
+        // Double check conditions after debounce
+        if (!this.editor || !this.editor.hasFocus() || this.sourceCode || this.isSyncingScroll) {
+          return
+        }
+
+        try {
+          const markdown = this.editor.getMarkdown()
+          if (!markdown) return
+
+          // Get cursor position from Muya's selection
+          // Muya stores cursor as character offset in markdown
+          const selection = this.editor.getSelection()
+          if (!selection || typeof selection.start !== 'number') {
+            return
+          }
+
+          // Convert character offset to line number
+          const lines = markdown.split('\n')
+          let currentLine = 0
+          let currentPos = 0
+
+          for (let i = 0; i < lines.length; i++) {
+            const lineLength = lines[i].length + 1 // +1 for newline
+            if (currentPos + lineLength > selection.start) {
+              currentLine = i
+              break
+            }
+            currentPos += lineLength
+          }
+
+          // Skip if line hasn't changed (avoid unnecessary updates)
+          if (currentLine === this.lastSyncLine) {
+            return
+          }
+
+          // Update last synced line
+          this.lastSyncLine = currentLine
+
+          // Emit event to source code editor to scroll to this line
+          bus.$emit('sync-scroll-to-line', {
+            line: currentLine,
+            ch: selection.start - currentPos
+          })
+        } catch (e) {
+          // If we can't determine the line, skip sync
+          console.warn('[Editor] Failed to sync scroll to source:', e)
+        }
+      }, 200) // Debounce for 200ms to reduce flickering
+    },
+
+    // Handle scroll sync from source code editor (scroll to specific line)
+    handleSyncScrollToLine ({ line, ch }) {
+      const { editor } = this
+      if (!editor) return
+
+      // Skip if user is currently editing in preview to avoid interrupting
+      if ((editor.hasFocus() && !this.sourceCode) || this.isSyncingScroll) {
+        return
+      }
+
+      const markdown = editor.getMarkdown()
+      if (!markdown) return
+
+      const lines = markdown.split('\n')
+      if (line < 0 || line >= lines.length) {
+        return
+      }
+
+      // Set flag to prevent triggering our own scroll sync
+      this.isSyncingScroll = true
+
+      // Use requestAnimationFrame for smooth scrolling
+      requestAnimationFrame(() => {
+        try {
+          // Find the DOM element corresponding to this line
+          const targetLineText = lines[line]
+          if (!targetLineText) {
+            this.isSyncingScroll = false
+            return
+          }
+
+          // Find all paragraph/block elements and try to match by content
+          const { container } = editor
+          const allBlocks = container.querySelectorAll('p, h1, h2, h3, h4, h5, h6, blockquote, pre, li, div.ag-paragraph')
+          let targetElement = null
+
+          // Try to find element by matching text content (more accurate matching)
+          for (const block of allBlocks) {
+            const blockText = block.textContent || ''
+            // More precise matching: check if the block starts with or contains the line text
+            const trimmedLine = targetLineText.trim()
+            const trimmedBlock = blockText.trim()
+
+            if (trimmedBlock === trimmedLine ||
+                trimmedBlock.startsWith(trimmedLine) ||
+                trimmedLine.startsWith(trimmedBlock) ||
+                (trimmedLine.length > 0 && trimmedBlock.includes(trimmedLine))) {
+              targetElement = block
+              break
+            }
+          }
+
+          if (targetElement) {
+            // Found matching element, scroll to it
+            const elementRect = targetElement.getBoundingClientRect()
+            const containerRect = container.getBoundingClientRect()
+            const containerScrollTop = container.scrollTop
+            const elementTop = elementRect.top - containerRect.top + containerScrollTop
+
+            // Check if element is already visible
+            const viewportTop = containerScrollTop
+            const viewportBottom = containerScrollTop + container.clientHeight
+            const elementBottom = elementTop + elementRect.height
+
+            if (elementTop >= viewportTop && elementBottom <= viewportBottom) {
+              // Already visible, no need to scroll
+              this.isSyncingScroll = false
+              return
+            }
+
+            // Position the element in the upper third of viewport
+            const viewportThird = container.clientHeight / 3
+            const targetScroll = elementTop - viewportThird
+
+            animatedScrollTo(container, Math.max(0, targetScroll), 0)
+          } else {
+            // Fallback: estimate by line number
+            const { fontSize, lineHeight } = editor.options || {}
+            const lineHeightValue = (fontSize || 16) * (lineHeight || 1.6)
+            const estimatedY = line * lineHeightValue
+            const viewportThird = container.clientHeight / 3
+            const targetScroll = Math.max(0, estimatedY - viewportThird)
+
+            animatedScrollTo(container, targetScroll, 0)
+          }
+        } catch (e) {
+          console.warn('[Editor] Failed to scroll to line:', e)
+        } finally {
+          // Reset flag after a short delay
+          setTimeout(() => {
+            this.isSyncingScroll = false
+          }, 100)
+        }
+      })
     }
   },
   beforeDestroy () {
@@ -1151,8 +1446,14 @@ export default {
     bus.$off('switch-spellchecker-language', this.switchSpellcheckLanguage)
     bus.$off('open-command-spellchecker-switch-language', this.openSpellcheckerLanguageCommand)
     bus.$off('replace-misspelling', this.replaceMisspelling)
+    bus.$off('sync-scroll-to-line', this.handleSyncScrollToLine)
 
     document.removeEventListener('keyup', this.keyup)
+
+    if (this.scrollSyncTimer) {
+      clearTimeout(this.scrollSyncTimer)
+      this.scrollSyncTimer = null
+    }
 
     this.editor.destroy()
     this.editor = null
@@ -1193,6 +1494,14 @@ export default {
   .typewriter .editor-component {
     padding-top: calc(50vh - 136px);
     padding-bottom: calc(50vh - 54px);
+  }
+
+  /* In split-view mode, remove top and bottom padding to match preview editor style */
+  .container.split-view .preview-panel .editor-component #ag-editor-id {
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    padding-left: 50px;
+    padding-right: 50px;
   }
 
   .image-viewer {

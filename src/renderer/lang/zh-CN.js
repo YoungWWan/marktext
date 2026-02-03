@@ -251,6 +251,13 @@ export default {
   editorHints: {
     typeToInsert: '输入 @ 插入'
   },
+  // View
+  view: {
+    sourceCode: '源码',
+    preview: '预览',
+    showSourceCode: '显示源码',
+    hideSourceCode: '隐藏源码'
+  },
   // AI Settings Page
   aiSettings: {
     title: 'AI',
