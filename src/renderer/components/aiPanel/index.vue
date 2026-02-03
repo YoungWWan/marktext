@@ -25,8 +25,16 @@ export default {
   },
   computed: {
     ...mapState({
-      showAiPanel: state => state.layout.showAiPanel
-    })
+      showAiPanel: state => state.layout.showAiPanel,
+      showSideBar: state => state.layout.showSideBar,
+      sideBarWidth: state => state.layout.sideBarWidth
+    }),
+    maxPanelWidth () {
+      // 计算可用空间：窗口宽度 - 侧边栏宽度 - 编辑器最小宽度(200px)
+      const sideBarWidth = this.showSideBar ? this.sideBarWidth : 0
+      const editorMinWidth = 200
+      return Math.max(300, window.innerWidth - sideBarWidth - editorMinWidth)
+    }
   },
   mounted () {
     this.initDragBar()
@@ -42,7 +50,13 @@ export default {
 
       const onMouseMove = (e) => {
         const diff = startX - e.clientX
-        const newWidth = Math.max(300, Math.min(800, startWidth + diff))
+        // 限制宽度在最小值和最大值之间，最大值根据可用空间动态计算
+        const sideBarWidth = this.showSideBar ? this.sideBarWidth : 0
+        // 编辑器最小宽度，确保编辑器仍然可用
+        const editorMinWidth = 200
+        // 计算最大可用宽度：窗口宽度 - 侧边栏宽度 - 编辑器最小宽度
+        const maxWidth = Math.max(300, window.innerWidth - sideBarWidth - editorMinWidth)
+        const newWidth = Math.max(300, Math.min(maxWidth, startWidth + diff))
         this.panelWidth = newWidth
       }
 
@@ -75,6 +89,8 @@ export default {
   border-left: 1px solid var(--sideBarTitleBorder);
   position: relative;
   box-sizing: border-box;
+  flex-shrink: 0;
+  overflow: hidden;
 }
 
 .drag-bar {

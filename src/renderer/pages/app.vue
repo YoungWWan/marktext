@@ -222,6 +222,7 @@ export default {
     left: 0;
     right: 0;
     bottom: 0;
+    overflow-x: hidden;
   }
   .editor-container .hide {
     z-index: -1;
@@ -236,6 +237,7 @@ export default {
     display: flex;
     flex-direction: column;
     flex: 1;
+    min-width: 0;
     min-height: 100vh;
     position: relative;
     padding-top: var(--titleBarHeight);
