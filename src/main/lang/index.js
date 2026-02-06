@@ -34,7 +34,7 @@ export const getLanguage = () => currentLanguage
 export const t = (key) => {
   const keys = key.split('.')
   let result = messages[currentLanguage]
-  
+
   for (const k of keys) {
     if (result && typeof result === 'object' && k in result) {
       result = result[k]
@@ -51,7 +51,7 @@ export const t = (key) => {
       break
     }
   }
-  
+
   return typeof result === 'string' ? result : key
 }
 

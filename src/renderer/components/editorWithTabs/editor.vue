@@ -6,8 +6,6 @@
     'font-family': editorFontFamily ? `${editorFontFamily}, ${defaultFontFamily}` : `${defaultFontFamily}` }"
     :dir="textDirection"
   >
-    <!-- AI Diff 显示在编辑器内容区域内部 -->
-    <slot name="diff-overlay"></slot>
     <div
       ref="editor"
       class="editor-component"
@@ -902,9 +900,22 @@ export default {
 
     scrollToCursor (duration = 300) {
       this.$nextTick(() => {
-        const { container } = this.editor
-        const { y } = this.editor.getSelection().cursorCoords
-        animatedScrollTo(container, container.scrollTop + y - STANDAR_Y, duration)
+        if (!this.editor) {
+          return
+        }
+        try {
+          const selection = this.editor.getSelection()
+          if (!selection || !selection.cursorCoords) {
+            return
+          }
+          const { container } = this.editor
+          const { y } = selection.cursorCoords
+          animatedScrollTo(container, container.scrollTop + y - STANDAR_Y, duration)
+        } catch (e) {
+          // Cursor may be null when editor is not ready or has no focus
+          // Silently ignore this error
+          console.debug('[Editor] Failed to scroll to cursor:', e.message)
+        }
       })
     },
 

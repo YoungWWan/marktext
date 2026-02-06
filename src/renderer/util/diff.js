@@ -1,52 +1,8 @@
 /**
  * Diff计算工具
- * 用于计算两个文本之间的差异，类似git diff
+ * 使用jsdiff库计算两个文本之间的差异，类似git diff
  */
-
-/**
- * 计算最长公共子序列 (LCS)
- * 返回匹配点的数组，每个匹配点包含 {oldIndex, newIndex}
- */
-export function computeLCS (oldLines, newLines) {
-  const m = oldLines.length
-  const n = newLines.length
-
-  if (m === 0 || n === 0) {
-    return []
-  }
-
-  // 使用动态规划计算 LCS
-  const dp = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0))
-
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      if (oldLines[i - 1] === newLines[j - 1]) {
-        dp[i][j] = dp[i - 1][j - 1] + 1
-      } else {
-        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1])
-      }
-    }
-  }
-
-  // 回溯找到所有匹配点
-  const matches = []
-  let i = m
-  let j = n
-
-  while (i > 0 && j > 0) {
-    if (oldLines[i - 1] === newLines[j - 1]) {
-      matches.unshift({ oldIndex: i - 1, newIndex: j - 1 })
-      i--
-      j--
-    } else if (dp[i - 1][j] > dp[i][j - 1]) {
-      i--
-    } else {
-      j--
-    }
-  }
-
-  return matches
-}
+import { diffLines } from 'diff'
 
 /**
  * 计算两个文本的差异，只显示差异部分（不显示上下文）
@@ -58,57 +14,52 @@ export function calculateDiffLines (oldContent, newContent) {
     return { lines: [], stats: { additions: 0, deletions: 0 } }
   }
 
-  const oldLines = oldContent ? oldContent.split('\n') : []
-  const newLines = newContent ? newContent.split('\n') : []
-
-  // 使用 LCS 算法找到所有匹配的行
-  const matches = computeLCS(oldLines, newLines)
+  // 使用jsdiff库计算差异
+  const changes = diffLines(oldContent || '', newContent || '')
 
   // 统计添加和删除的行数
   let additions = 0
   let deletions = 0
   const lines = []
 
-  // 将匹配点转换为 diff 行，只显示差异部分
-  let oldIndex = 0
-  let newIndex = 0
-  let matchIndex = 0
+  // 跟踪当前行号
+  let oldLineNumber = 1
+  let newLineNumber = 1
 
-  while (oldIndex < oldLines.length || newIndex < newLines.length) {
-    // 找到下一个匹配点
-    const nextMatch = matchIndex < matches.length ? matches[matchIndex] : null
-    const nextMatchOldIndex = nextMatch ? nextMatch.oldIndex : oldLines.length
-    const nextMatchNewIndex = nextMatch ? nextMatch.newIndex : newLines.length
-
-    // 收集删除的行（行号从1开始）
-    while (oldIndex < oldLines.length && oldIndex < nextMatchOldIndex) {
-      lines.push({
-        type: 'removed',
-        content: oldLines[oldIndex],
-        oldLineNumber: oldIndex + 1, // 行号从1开始
-        newLineNumber: null // 删除的行在新文档中不存在
-      })
-      deletions++
-      oldIndex++
+  // 遍历所有变更
+  for (const change of changes) {
+    const changeLines = change.value.split('\n')
+    // 移除最后一个空行（如果存在），因为split会在末尾产生空字符串
+    if (changeLines.length > 0 && changeLines[changeLines.length - 1] === '') {
+      changeLines.pop()
     }
 
-    // 收集添加的行（行号从1开始）
-    while (newIndex < newLines.length && newIndex < nextMatchNewIndex) {
-      lines.push({
-        type: 'added',
-        content: newLines[newIndex],
-        oldLineNumber: null, // 新增的行在旧文档中不存在
-        newLineNumber: newIndex + 1 // 行号从1开始
-      })
-      additions++
-      newIndex++
-    }
-
-    // 跳过匹配的行（不显示上下文）
-    if (nextMatch && oldIndex === nextMatch.oldIndex && newIndex === nextMatch.newIndex) {
-      oldIndex++
-      newIndex++
-      matchIndex++
+    if (change.added) {
+      // 添加的行
+      for (const line of changeLines) {
+        lines.push({
+          type: 'added',
+          content: line,
+          oldLineNumber: null, // 新增的行在旧文档中不存在
+          newLineNumber: newLineNumber++
+        })
+        additions++
+      }
+    } else if (change.removed) {
+      // 删除的行
+      for (const line of changeLines) {
+        lines.push({
+          type: 'removed',
+          content: line,
+          oldLineNumber: oldLineNumber++, // 行号从1开始
+          newLineNumber: null // 删除的行在新文档中不存在
+        })
+        deletions++
+      }
+    } else {
+      // 未变更的行（上下文），跳过不显示，但需要更新行号
+      oldLineNumber += changeLines.length
+      newLineNumber += changeLines.length
     }
   }
 

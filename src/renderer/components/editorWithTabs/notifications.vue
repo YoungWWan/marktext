@@ -10,26 +10,33 @@
       <div v-if="currentNotification.msg && !currentNotification.aiFileInfo" class="msg">
         {{ currentNotification.msg }}
       </div>
-      <!-- AI文件修改提示（diff在编辑器覆盖层中显示） -->
+      <!-- AI文件修改提示 -->
       <div v-if="currentNotification.aiFileInfo" class="ai-file-modified-hint">
-        {{ $t('fileChange.changedByAI') || '文件已被AI修改，请在编辑器上方查看diff并确认' }}
+        {{ $t('fileChange.changedByAI') || '文件已被AI修改，可通过文件历史查看对比' }}
       </div>
     </div>
     <div class="controls">
       <div>
         <span
           v-if="currentNotification.showConfirm && currentNotification.aiFileInfo"
-          class="inline-button accept-btn"
-          @click.stop="handleClick(true)"
+          class="inline-button history-btn"
+          @click.stop="handleViewHistory"
         >
-          {{ $t('ai.diffPreview.accept') || '接受' }}
+          {{ $t('fileHistory.viewHistory') || '查看历史' }}
         </span>
         <span
           v-if="currentNotification.showConfirm && currentNotification.aiFileInfo"
-          class="inline-button reject-btn"
-          @click.stop="handleClick(false)"
+          class="inline-button undo-btn"
+          @click.stop="handleUndo"
         >
-          {{ $t('ai.diffPreview.reject') || '拒绝' }}
+          {{ $t('fileHistory.undo') || '撤销' }}
+        </span>
+        <span
+          v-if="currentNotification.showConfirm && currentNotification.aiFileInfo"
+          class="inline-button accept-btn"
+          @click.stop="handleClick(true)"
+        >
+          {{ $t('ai.diffPreview.accept') || '确认' }}
         </span>
         <span
           v-else-if="currentNotification.showConfirm"
@@ -54,6 +61,7 @@
 <script>
 import { mapState } from 'vuex'
 import bus from '@/bus'
+import fileChangeTrackerClient from '@/util/fileChangeTrackerClient'
 
 export default {
   data () {
@@ -97,6 +105,52 @@ export default {
 
       if (action) {
         action(status)
+      }
+    },
+    async handleViewHistory () {
+      const notifications = this.currentFile.notifications
+      if (!notifications || notifications.length === 0) {
+        return
+      }
+
+      const item = notifications[0]
+      if (item.aiFileInfo && item.aiFileInfo.diffPreview) {
+        const filePath = item.aiFileInfo.diffPreview.filePath
+        // 触发显示文件历史对话框
+        bus.$emit('SHOW_FILE_HISTORY_DIALOG', filePath)
+      }
+    },
+    async handleUndo () {
+      const notifications = this.currentFile.notifications
+      if (!notifications || notifications.length === 0) {
+        return
+      }
+
+      const item = notifications[0]
+      if (item.aiFileInfo && item.aiFileInfo.diffPreview) {
+        const filePath = item.aiFileInfo.diffPreview.filePath
+        try {
+          const result = await fileChangeTrackerClient.undo(filePath)
+          if (result.success) {
+            // 通知文件已恢复
+            bus.$emit('file-content-restored', {
+              pathname: filePath,
+              content: result.content
+            })
+            // 发送事件通知聊天框已拒绝
+            bus.$emit('ai-diff-action', {
+              filePath: filePath,
+              action: 'rejected'
+            })
+            // 移除通知
+            notifications.shift()
+          } else {
+            this.$message && this.$message.error(result.error || '撤销失败')
+          }
+        } catch (error) {
+          console.error('Failed to undo:', error)
+          this.$message && this.$message.error(error.message || '撤销失败')
+        }
       }
     }
   }
@@ -266,6 +320,14 @@ export default {
     & .reject-btn {
       background: rgba(255, 105, 105, 0.3);
       border-color: rgba(255, 105, 105, 0.5);
+    }
+    & .history-btn {
+      background: rgba(33, 150, 243, 0.3);
+      border-color: rgba(33, 150, 243, 0.5);
+    }
+    & .undo-btn {
+      background: rgba(255, 152, 0, 0.3);
+      border-color: rgba(255, 152, 0, 0.5);
     }
   }
 </style>

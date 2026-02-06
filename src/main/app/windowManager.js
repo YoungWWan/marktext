@@ -374,6 +374,14 @@ class WindowManager extends EventEmitter {
       if (editor) {
         editor.removeFromOpenedFiles(pathname)
       }
+      // 清理文件变更追踪器（异步，不阻塞）
+      if (pathname) {
+        const { getFileChangeTrackerManager } = require('../filesystem/fileChangeTracker')
+        const manager = getFileChangeTrackerManager()
+        manager.removeTracker(pathname).catch(err => {
+          log.warn('Failed to remove file tracker:', err)
+        })
+      }
     })
 
     ipcMain.on('mt::window-toggle-always-on-top', e => {

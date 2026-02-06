@@ -199,15 +199,16 @@
                         </div>
                       </div>
                       <div v-if="!item.tool.diffAction" class="diff-preview-actions">
-                        <button class="diff-btn reject-btn" @click="handleToolDiffReject(item.messageId, item.toolIndex)">
+                        <button class="diff-btn reject-btn" @click.stop="handleToolDiffUndo(item.messageId, item.toolIndex)">
                           {{ $t('ai.diffPreview.reject') || '拒绝' }}
                         </button>
-                        <button class="diff-btn accept-btn" @click="handleToolDiffAccept(item.messageId, item.toolIndex)">
-                          {{ $t('ai.diffPreview.accept') || '接受' }}
+                        <button class="diff-btn accept-btn" @click.stop="handleToolDiffAccept(item.messageId, item.toolIndex)">
+                          {{ $t('ai.diffPreview.accept') || '确认' }}
                         </button>
                       </div>
                     </div>
-                    <div v-if="item.tool.status === 'completed' && item.tool.output" class="tool-output">
+                    <!-- 对于write/edit操作，不显示输出信息 -->
+                    <div v-if="item.tool.status === 'completed' && item.tool.output && item.tool.name !== 'write' && item.tool.name !== 'edit'" class="tool-output">
                       <pre>{{ truncateOutput(item.tool.output) }}</pre>
                     </div>
                     <div v-if="item.tool.status === 'error' && item.tool.error" class="tool-error">
@@ -292,6 +293,9 @@ import { ipcRenderer } from 'electron'
 import { mapState } from 'vuex'
 import { createAIService } from '@/opencode/ai-service'
 import bus from '@/bus'
+import fileChangeTrackerClient from '@/util/fileChangeTrackerClient'
+import path from 'path'
+import { isSamePathSync } from 'common/filesystem/paths'
 
 export default {
   name: 'AiChat',
@@ -655,21 +659,21 @@ export default {
               tool.output = result.output
               tool.error = result.error
 
-              // 如果有diff预览信息，自动显示（不阻塞）
-              if (result.diffPreview) {
-                const diffResult = this.calculateDiffLines(result.diffPreview.oldContent || '', result.diffPreview.newContent || '')
-                tool.diffPreview = {
-                  filePath: result.diffPreview.filePath,
-                  oldContent: result.diffPreview.oldContent || '',
-                  newContent: result.diffPreview.newContent || '',
-                  lines: diffResult.lines,
-                  stats: diffResult.stats
+              // 如果是write/edit操作，从文件历史记录获取diff预览
+              if (result.diffPreview && (tool.name === 'write' || tool.name === 'edit')) {
+                const filePath = result.diffPreview.filePath
+                // 先初始化diffPreview，使用result中的信息作为后备
+                if (!tool.diffPreview) {
+                  this.$set(tool, 'diffPreview', {
+                    filePath: result.diffPreview.filePath,
+                    oldContent: result.diffPreview.oldContent || '',
+                    newContent: result.diffPreview.newContent || '',
+                    lines: [],
+                    stats: { additions: 0, deletions: 0 }
+                  })
                 }
-                tool.status = 'pending-diff'
-                // 等待 DOM 更新后，设置背景层位置
-                this.$nextTick(() => {
-                  this.updateDiffBackgroundLayers()
-                })
+                // 异步加载文件历史记录的diff
+                this.loadDiffFromHistory(filePath, tool, callId)
               }
             }
             this.scrollToBottom()
@@ -749,51 +753,381 @@ export default {
 
       const tool = message.toolCalls[toolIndex]
       if (tool.diffPreview) {
-        // 接受：标记为已接受，保持diffPreview和展开状态
+        // 确认：只标记为已接受，不需要其他操作
         this.$set(tool, 'diffAction', 'accepted')
-        // 不改变status，保持pending-diff状态，不显示"Successfully edited"
         // 确保工具保持展开状态
         const toolId = `${messageId}-${toolIndex}`
         this.$set(this.expandedTools, toolId, true)
+
+        // 通知编辑器已确认
+        bus.$emit('ai-diff-action', {
+          filePath: tool.diffPreview.filePath,
+          action: 'accepted'
+        })
       }
     },
 
-    async handleToolDiffReject (messageId, toolIndex) {
-      const message = this.messages.find(m => m.id === messageId)
-      if (!message || !message.toolCalls || !message.toolCalls[toolIndex]) return
+    handleViewFileHistory (filePath) {
+      // 触发显示文件历史对话框
+      bus.$emit('SHOW_FILE_HISTORY_DIALOG', filePath)
+    },
 
-      const tool = message.toolCalls[toolIndex]
-      if (tool.diffPreview) {
-        // 拒绝：回滚文件到原始内容
-        try {
-          const result = await ipcRenderer.invoke('ai:tool:write', {
-            path: tool.diffPreview.filePath,
-            content: tool.diffPreview.oldContent,
-            workingDirectory: this.projectPath
+    /**
+     * 从文件历史记录加载diff预览
+     */
+    async loadDiffFromHistory (filePath, tool, callId) {
+      // 先保存原始的diffPreview作为后备
+      const originalDiffPreview = tool.diffPreview || { filePath, oldContent: '', newContent: '' }
+
+      // 获取准确的版本号（从result中传递过来的）
+      const previousVersion = originalDiffPreview.previousVersion
+      const currentVersion = originalDiffPreview.version
+
+      console.log('[AI Chat] Loading diff from history:', {
+        filePath,
+        previousVersion,
+        currentVersion,
+        hasOriginalDiff: !!originalDiffPreview.oldContent && !!originalDiffPreview.newContent,
+        toolName: tool.name
+      })
+
+      try {
+        // 如果版本号存在，使用准确的版本号
+        if (previousVersion !== null && previousVersion !== undefined &&
+            currentVersion !== null && currentVersion !== undefined) {
+          // 获取两个版本的内容来计算diff
+          let previousContent = ''
+          let currentContent = ''
+
+          // 获取修改前的内容
+          if (previousVersion === 0) {
+            // 基准版本，使用原始diffPreview的oldContent
+            previousContent = originalDiffPreview.oldContent || ''
+          } else {
+            const previousContentResult = await fileChangeTrackerClient.gotoVersion(filePath, previousVersion)
+            if (previousContentResult.success) {
+              previousContent = previousContentResult.content || ''
+            } else {
+              // 如果获取失败，使用原始diffPreview的oldContent
+              previousContent = originalDiffPreview.oldContent || ''
+            }
+          }
+
+          // 获取修改后的内容
+          const currentContentResult = await fileChangeTrackerClient.gotoVersion(filePath, currentVersion)
+          if (currentContentResult.success) {
+            currentContent = currentContentResult.content || ''
+          } else {
+            // 如果获取失败，使用原始diffPreview的newContent
+            currentContent = originalDiffPreview.newContent || ''
+          }
+
+          // 如果两个内容都为空，使用原始diff预览
+          if (!previousContent && !currentContent && originalDiffPreview.oldContent && originalDiffPreview.newContent) {
+            previousContent = originalDiffPreview.oldContent
+            currentContent = originalDiffPreview.newContent
+          }
+
+          // 计算diff
+          const diffResult = this.calculateDiffLines(previousContent, currentContent)
+
+          console.log('[AI Chat] Diff calculated from versions:', {
+            filePath,
+            linesCount: diffResult.lines ? diffResult.lines.length : 0,
+            stats: diffResult.stats,
+            previousVersion,
+            currentVersion
           })
 
+          // 更新工具的diff预览
+          this.$set(tool, 'diffPreview', {
+            filePath: filePath,
+            oldContent: previousContent,
+            newContent: currentContent,
+            lines: diffResult.lines || [],
+            stats: diffResult.stats || { additions: 0, deletions: 0 },
+            previousVersion: previousVersion,
+            currentVersion: currentVersion
+          })
+
+          tool.status = 'completed'
+          // 强制触发视图更新
+          this.$forceUpdate()
+          // 等待 DOM 更新后，设置背景层位置
+          this.$nextTick(() => {
+            this.updateDiffBackgroundLayers()
+            this.scrollToBottom()
+          })
+          return
+        }
+
+        // 如果没有版本号，回退到使用历史记录的方式
+        // 等待一小段时间，确保文件历史记录已经更新
+        await new Promise(resolve => setTimeout(resolve, 200))
+
+        // 获取文件历史记录
+        const historyResult = await fileChangeTrackerClient.getHistory(filePath)
+        if (!historyResult.success || !historyResult.history || historyResult.history.length === 0) {
+          // 如果没有历史记录，使用原始diff预览
+          const diffResult = this.calculateDiffLines(originalDiffPreview.oldContent || '', originalDiffPreview.newContent || '')
+          this.$set(tool, 'diffPreview', {
+            filePath: originalDiffPreview.filePath || filePath,
+            oldContent: originalDiffPreview.oldContent || '',
+            newContent: originalDiffPreview.newContent || '',
+            lines: diffResult.lines,
+            stats: diffResult.stats
+          })
+          tool.status = 'completed'
+          this.$nextTick(() => {
+            this.updateDiffBackgroundLayers()
+          })
+          return
+        }
+
+        const history = historyResult.history
+        let fallbackPreviousVersion, fallbackCurrentVersion
+
+        if (history.length === 1) {
+          // 如果只有一个版本，说明是第一次修改，对比基准版本（version 0）和当前版本
+          fallbackCurrentVersion = history[0].version
+          fallbackPreviousVersion = 0
+        } else {
+          // 获取最新两个版本
+          fallbackCurrentVersion = history[history.length - 1].version
+          fallbackPreviousVersion = history[history.length - 2].version
+        }
+
+        // 获取两个版本的内容来计算diff（回退逻辑）
+        let fallbackPreviousContent = ''
+        let fallbackCurrentContent = ''
+
+        // 如果fallbackPreviousVersion是0，说明是基准版本
+        if (fallbackPreviousVersion === 0) {
+          // 基准版本，使用原始diffPreview的oldContent
+          fallbackPreviousContent = originalDiffPreview.oldContent || ''
+        } else {
+          const previousContentResult = await fileChangeTrackerClient.gotoVersion(filePath, fallbackPreviousVersion)
+          if (previousContentResult.success) {
+            fallbackPreviousContent = previousContentResult.content || ''
+          } else {
+            // 如果获取失败，使用原始diff预览的oldContent
+            fallbackPreviousContent = originalDiffPreview.oldContent || ''
+          }
+        }
+
+        const currentContentResult = await fileChangeTrackerClient.gotoVersion(filePath, fallbackCurrentVersion)
+        if (currentContentResult.success) {
+          fallbackCurrentContent = currentContentResult.content || ''
+        } else {
+          // 如果获取失败，使用原始diff预览的newContent
+          fallbackCurrentContent = originalDiffPreview.newContent || ''
+        }
+
+        // 如果两个内容都为空，使用原始diff预览
+        if (!fallbackPreviousContent && !fallbackCurrentContent && originalDiffPreview.oldContent && originalDiffPreview.newContent) {
+          fallbackPreviousContent = originalDiffPreview.oldContent
+          fallbackCurrentContent = originalDiffPreview.newContent
+        }
+
+        // 计算diff
+        const diffResult = this.calculateDiffLines(fallbackPreviousContent, fallbackCurrentContent)
+
+        console.log('[AI Chat] Diff calculated from fallback history:', {
+          filePath,
+          linesCount: diffResult.lines ? diffResult.lines.length : 0,
+          stats: diffResult.stats,
+          fallbackPreviousVersion,
+          fallbackCurrentVersion
+        })
+
+        // 更新工具的diff预览
+        this.$set(tool, 'diffPreview', {
+          filePath: filePath,
+          oldContent: fallbackPreviousContent,
+          newContent: fallbackCurrentContent,
+          lines: diffResult.lines || [],
+          stats: diffResult.stats || { additions: 0, deletions: 0 },
+          previousVersion: fallbackPreviousVersion,
+          currentVersion: fallbackCurrentVersion
+        })
+
+        tool.status = 'completed'
+        // 强制触发视图更新
+        this.$forceUpdate()
+        // 等待 DOM 更新后，设置背景层位置
+        this.$nextTick(() => {
+          this.updateDiffBackgroundLayers()
+          this.scrollToBottom()
+        })
+      } catch (error) {
+        console.error('Failed to load diff from history:', error)
+        // 如果出错，使用原始diff预览
+        const diffResult = this.calculateDiffLines(originalDiffPreview.oldContent || '', originalDiffPreview.newContent || '')
+        this.$set(tool, 'diffPreview', {
+          filePath: originalDiffPreview.filePath || filePath,
+          oldContent: originalDiffPreview.oldContent || '',
+          newContent: originalDiffPreview.newContent || '',
+          lines: diffResult.lines,
+          stats: diffResult.stats
+        })
+        tool.status = 'completed'
+        this.$nextTick(() => {
+          this.updateDiffBackgroundLayers()
+        })
+      }
+    },
+
+    /**
+     * 处理撤销操作（使用文件历史的undo）
+     */
+    async handleToolDiffUndo (messageId, toolIndex) {
+      console.log('[AI Chat] handleToolDiffUndo called:', { messageId, toolIndex })
+      const message = this.messages.find(m => m.id === messageId)
+      if (!message || !message.toolCalls || !message.toolCalls[toolIndex]) {
+        console.warn('[AI Chat] Message or tool not found:', { messageId, toolIndex, hasMessage: !!message })
+        return
+      }
+
+      const tool = message.toolCalls[toolIndex]
+      console.log('[AI Chat] Tool found:', {
+        hasDiffPreview: !!tool.diffPreview,
+        filePath: tool.diffPreview?.filePath,
+        toolName: tool.name
+      })
+
+      if (tool.diffPreview && tool.diffPreview.filePath) {
+        try {
+          console.log('[AI Chat] Calling undo for file:', tool.diffPreview.filePath)
+          const result = await fileChangeTrackerClient.undo(tool.diffPreview.filePath)
+          console.log('[AI Chat] Undo result:', result)
+
           if (result.success) {
-            // 标记为已拒绝，保持diffPreview和展开状态
+            // 标记为已拒绝
             this.$set(tool, 'diffAction', 'rejected')
-            // 不改变status，保持pending-diff状态
             // 确保工具保持展开状态
             const toolId = `${messageId}-${toolIndex}`
             this.$set(this.expandedTools, toolId, true)
 
-            // 通知编辑器已拒绝（如果编辑器中有对应的通知）
-            bus.$emit('ai-diff-rejected', {
-              filePath: tool.diffPreview.filePath
+            // 通知编辑器已撤销
+            bus.$emit('ai-diff-action', {
+              filePath: tool.diffPreview.filePath,
+              action: 'rejected'
             })
+
+            // 直接从磁盘刷新文档，避免弹窗
+            const filePath = tool.diffPreview.filePath
+            const { tabs } = this.$store.state.editor
+            const tab = tabs.find(t => isSamePathSync(t.pathname, filePath))
+
+            if (tab) {
+              // 使用undo返回的内容直接刷新文档，避免弹窗
+              // undo操作已经将文件写回磁盘，result.content就是当前文件内容
+              try {
+                // 获取当前tab的选项
+                const encoding = tab.encoding || { encoding: 'utf-8', isBom: false }
+                const lineEnding = tab.lineEnding || 'lf'
+                const adjustLineEndingOnSave = tab.adjustLineEndingOnSave || false
+                const trimTrailingNewline = tab.trimTrailingNewline !== undefined ? tab.trimTrailingNewline : 2
+                const filename = tab.filename || path.basename(filePath)
+
+                // 构造change对象，使用undo返回的内容
+                const change = {
+                  pathname: filePath,
+                  data: {
+                    markdown: result.content,
+                    filename: filename,
+                    encoding: encoding,
+                    lineEnding: lineEnding,
+                    adjustLineEndingOnSave: adjustLineEndingOnSave,
+                    trimTrailingNewline: trimTrailingNewline,
+                    isMixedLineEndings: false // undo后的内容应该是统一的换行符
+                  }
+                }
+
+                // 直接提交LOAD_CHANGE来刷新文档，避免弹窗
+                this.$store.commit('LOAD_CHANGE', change)
+                console.log('[AI Chat] Document refreshed after undo')
+              } catch (error) {
+                console.error('[AI Chat] Failed to refresh document:', error)
+                // 如果刷新失败，仍然发送file-content-restored事件作为后备
+                bus.$emit('file-content-restored', {
+                  pathname: filePath,
+                  content: result.content
+                })
+              }
+            } else {
+              // 如果tab不存在，发送file-content-restored事件
+              bus.$emit('file-content-restored', {
+                pathname: filePath,
+                content: result.content
+              })
+            }
+
+            console.log('[AI Chat] Undo successful, marked as rejected')
           } else {
-            tool.status = 'error'
-            tool.error = `Edit rejected by user - failed to revert: ${result.error}`
-            tool.diffPreview = null
+            // 即使撤销失败（例如已经是最早版本），仍然标记为已拒绝
+            // 因为用户明确点击了拒绝按钮
+            this.$set(tool, 'diffAction', 'rejected')
+            const toolId = `${messageId}-${toolIndex}`
+            this.$set(this.expandedTools, toolId, true)
+
+            // 通知编辑器已拒绝
+            bus.$emit('ai-diff-action', {
+              filePath: tool.diffPreview.filePath,
+              action: 'rejected'
+            })
+
+            const errorMessage = result.error || result.message || '撤销失败'
+            console.warn('[AI Chat] Undo failed, but marked as rejected:', errorMessage)
+
+            // 如果已经是最早版本，尝试从磁盘读取当前内容并刷新文档
+            if (result.message === 'Already at the earliest version') {
+              const filePath = tool.diffPreview.filePath
+              const { tabs } = this.$store.state.editor
+              const tab = tabs.find(t => isSamePathSync(t.pathname, filePath))
+
+              if (tab) {
+                try {
+                  // 尝试从文件历史记录获取当前内容
+                  const currentResult = await fileChangeTrackerClient.getCurrentContent(filePath)
+                  if (currentResult.success && currentResult.content !== undefined) {
+                    const encoding = tab.encoding || { encoding: 'utf-8', isBom: false }
+                    const lineEnding = tab.lineEnding || 'lf'
+                    const adjustLineEndingOnSave = tab.adjustLineEndingOnSave || false
+                    const trimTrailingNewline = tab.trimTrailingNewline !== undefined ? tab.trimTrailingNewline : 2
+                    const filename = tab.filename || path.basename(filePath)
+
+                    const change = {
+                      pathname: filePath,
+                      data: {
+                        markdown: currentResult.content,
+                        filename: filename,
+                        encoding: encoding,
+                        lineEnding: lineEnding,
+                        adjustLineEndingOnSave: adjustLineEndingOnSave,
+                        trimTrailingNewline: trimTrailingNewline,
+                        isMixedLineEndings: false
+                      }
+                    }
+
+                    this.$store.commit('LOAD_CHANGE', change)
+                    console.log('[AI Chat] Document refreshed from current content')
+                  }
+                } catch (error) {
+                  console.error('[AI Chat] Failed to refresh document from current content:', error)
+                }
+              }
+            } else {
+              // 其他错误，显示错误消息
+              this.$message && this.$message.error(errorMessage)
+            }
           }
         } catch (error) {
-          tool.status = 'error'
-          tool.error = `Edit rejected by user - failed to revert: ${error.message}`
-          tool.diffPreview = null
+          console.error('[AI Chat] Failed to undo:', error)
+          this.$message && this.$message.error(error.message || '撤销失败')
         }
+      } else {
+        console.warn('[AI Chat] No diffPreview or filePath found')
       }
     },
 
@@ -1472,14 +1806,29 @@ export default {
   color: #fff;
 }
 
+/* 当有 diff 状态时，不显示 tool-status 的背景色 */
+.tool-status:has(.diff-status-accepted),
+.tool-status:has(.diff-status-rejected) {
+  background: transparent;
+  padding: 0;
+}
+
 .diff-status-accepted {
-  color: #21b56f;
+  background: #4caf50;
+  color: #fff;
   font-weight: 500;
+  padding: 2px 6px;
+  border-radius: 4px;
+  display: inline-block;
 }
 
 .diff-status-rejected {
-  color: #ff6969;
+  background: #f44336;
+  color: #fff;
   font-weight: 500;
+  padding: 2px 6px;
+  border-radius: 4px;
+  display: inline-block;
 }
 
 .tool-details {
@@ -1617,6 +1966,7 @@ export default {
   width: max-content;
   min-width: 100%;
   overflow: visible;
+  z-index: 1;
 }
 
 .diff-line-bg-layer {
@@ -1743,6 +2093,9 @@ export default {
   padding: 8px 12px;
   border-top: 1px solid var(--sideBarTitleBorder);
   background: var(--sideBarItemHoverBgColor);
+  position: relative;
+  z-index: 10;
+  flex-shrink: 0;
 }
 
 .diff-btn {
@@ -1752,6 +2105,9 @@ export default {
   cursor: pointer;
   font-size: 12px;
   transition: opacity 0.2s;
+  position: relative;
+  z-index: 11;
+  pointer-events: auto;
 }
 
 .diff-btn:hover {
@@ -1766,6 +2122,61 @@ export default {
 .diff-btn.accept-btn {
   background: var(--themeColor);
   color: #fff;
+}
+
+.diff-btn.history-btn {
+  background: #2196f3;
+  color: #fff;
+}
+
+.diff-btn.undo-btn {
+  background: #ff9800;
+  color: #fff;
+}
+
+.tool-file-modified {
+  border-top: 1px solid var(--sideBarTitleBorder);
+  margin-top: 8px;
+  background: var(--sideBarBgColor);
+  border-radius: 4px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.file-modified-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--sideBarItemHoverBgColor);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.file-path {
+  font-family: monospace;
+  color: var(--sideBarColor);
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.file-modified-hint {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--sideBarIconColor);
+}
+
+.file-modified-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--sideBarTitleBorder);
+  background: var(--sideBarItemHoverBgColor);
 }
 
 .message-error {

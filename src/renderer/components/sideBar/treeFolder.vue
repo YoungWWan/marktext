@@ -90,7 +90,7 @@ export default {
       this.$refs.folder.addEventListener('contextmenu', event => {
         event.preventDefault()
         this.$store.dispatch('CHANGE_ACTIVE_ITEM', this.folder)
-        showContextMenu(event, !!this.clipboard)
+        showContextMenu(event, !!this.clipboard, this.folder)
       })
       bus.$on('SIDEBAR::show-new-input', this.handleInputFocus)
       bus.$on('SIDEBAR::show-rename-input', this.focusRenameInput)

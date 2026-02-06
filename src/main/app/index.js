@@ -18,6 +18,7 @@ import { WindowType } from '../windows/base'
 import EditorWindow from '../windows/editor'
 import SettingWindow from '../windows/setting'
 import { initAIService } from '../ai'
+import initFileChangeTrackerIPC from '../filesystem/fileChangeTrackerIPC'
 
 class App {
   /**
@@ -37,6 +38,9 @@ class App {
 
     // 初始化 AI 服务
     initAIService()
+
+    // 初始化文件变更追踪 IPC
+    initFileChangeTrackerIPC()
   }
 
   /**

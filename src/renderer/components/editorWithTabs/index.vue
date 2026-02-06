@@ -6,18 +6,13 @@
       <tabs v-show="showTabBar"></tabs>
       <div class="container" :class="{ 'split-view': showPreview && showSourceCode && !sourceCode }">
         <editor
-          v-show="showPreview && !sourceCode"
+          v-if="showPreview && !sourceCode"
           :markdown="markdown"
           :cursor="cursor"
           :text-direction="textDirection"
           :platform="platform"
           class="preview-panel"
-        >
-          <!-- AI Diff 作为编辑器内容的一部分，通过 slot 插入 -->
-          <template slot="diff-overlay">
-            <editor-diff-overlay></editor-diff-overlay>
-          </template>
-        </editor>
+        ></editor>
         <source-code
           v-if="sourceCode || showSourceCode"
           :markdown="markdown"
@@ -55,7 +50,6 @@ import Tabs from './tabs.vue'
 import Editor from './editor.vue'
 import SourceCode from './sourceCode.vue'
 import TabNotifications from './notifications.vue'
-import EditorDiffOverlay from './editorDiffOverlay.vue'
 import bus from '@/bus'
 
 export default {
@@ -91,8 +85,7 @@ export default {
     Tabs,
     Editor,
     SourceCode,
-    TabNotifications,
-    EditorDiffOverlay
+    TabNotifications
   },
   data () {
     return {
@@ -171,7 +164,9 @@ export default {
     & > .container {
       position: relative;
       flex: 1;
-      overflow: hidden;
+      overflow: hidden !important;
+      overflow-y: hidden !important;
+      overflow-x: hidden !important;
       display: flex;
       flex-direction: column;
     }
@@ -203,14 +198,18 @@ export default {
     min-width: 0;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    overflow: hidden !important;
+    overflow-y: hidden !important;
+    overflow-x: hidden !important;
   }
 
   .container:not(.split-view) .source-code-panel {
     flex: 1;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    overflow: hidden !important;
+    overflow-y: hidden !important;
+    overflow-x: hidden !important;
   }
 
   .view-toggle-container {

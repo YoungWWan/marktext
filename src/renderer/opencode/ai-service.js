@@ -332,11 +332,15 @@ export function createAIService (config) {
               }
               const result = await executeTool(toolCall.name, toolInput, workingDirectory)
 
-              // 通知结果（文件已经修改），并传递diff信息
+              // 通知结果（文件已经修改），并传递diff信息和版本号
               if (onToolResult) {
                 onToolResult(toolCall.id, {
                   ...result,
-                  diffPreview: diffPreview
+                  diffPreview: {
+                    ...diffPreview,
+                    version: result.version, // 新版本号
+                    previousVersion: result.previousVersion // 修改前的版本号
+                  }
                 })
               }
 

@@ -65,7 +65,7 @@ export default {
       this.$refs.file.addEventListener('contextmenu', event => {
         event.preventDefault()
         this.$store.dispatch('CHANGE_ACTIVE_ITEM', this.file)
-        showContextMenu(event, !!this.clipboard)
+        showContextMenu(event, !!this.clipboard, this.file)
       })
 
       bus.$on('SIDEBAR::show-rename-input', this.focusRenameInput)

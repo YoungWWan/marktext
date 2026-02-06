@@ -224,7 +224,7 @@ class EditorWindow extends BaseWindow {
       const { preferences } = this._accessor
       const eol = preferences.getPreferredEol()
       const { autoGuessEncoding, trimTrailingNewline } = preferences.getAll()
-      
+
       fileList.forEach(filePath => {
         loadMarkdownFile(filePath, eol, autoGuessEncoding, trimTrailingNewline).then(rawDocument => {
           this._filesToOpen.push({ doc: rawDocument, options: {}, selected: false })

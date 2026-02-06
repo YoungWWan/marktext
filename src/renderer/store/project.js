@@ -186,6 +186,12 @@ const actions = {
       commit('SET_RENAME_CACHE', pathname)
       bus.$emit('SIDEBAR::show-rename-input')
     })
+    bus.$on('SIDEBAR::view-history', () => {
+      const { pathname } = state.activeItem
+      if (pathname) {
+        bus.$emit('SHOW_FILE_HISTORY_DIALOG', pathname)
+      }
+    })
   },
 
   CREATE_FILE_DIRECTORY ({ commit, state }, name) {

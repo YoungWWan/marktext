@@ -15,6 +15,9 @@ const codeBlockCtrl = ContentState => {
       return { lang: '', paragraph: null }
     }
     const startBlock = this.getBlock(start.key)
+    if (!startBlock) {
+      return { lang: '', paragraph: null }
+    }
     const paragraph = document.querySelector(`#${start.key}`)
     let lang = ''
     const { text } = startBlock

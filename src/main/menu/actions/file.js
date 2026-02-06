@@ -13,6 +13,8 @@ import { writeMarkdownFile } from '../../filesystem/markdown'
 import { getPath, getRecommendTitleFromMarkdownString } from '../../utils'
 import pandoc from '../../utils/pandoc'
 import { t } from '../../lang'
+import { getFileChangeTrackerManager } from '../../filesystem/fileChangeTracker'
+import fsPromises from 'fs/promises'
 
 // TODO(refactor): "save" and "save as" should be moved to the editor window (editor.js) and
 // the renderer should communicate only with the editor window for file relevant stuff.
@@ -139,8 +141,32 @@ const handleResponseForSave = async (e, { id, filename, markdown, pathname, opti
   filePath = path.resolve(filePath)
   const extension = path.extname(filePath) || '.md'
   filePath = !filePath.endsWith(extension) ? filePath += extension : filePath
+
   return writeMarkdownFile(filePath, markdown, options, win)
-    .then(() => {
+    .then(async () => {
+      // 记录文件变更（使用追踪器中的当前版本内容作为oldContent）
+      const trackerManager = getFileChangeTrackerManager()
+      // 获取追踪器中的当前版本内容，而不是从磁盘读取
+      let oldContent = ''
+      try {
+        const currentResult = await trackerManager.getCurrentContent(filePath)
+        oldContent = currentResult || ''
+      } catch (error) {
+        // 如果获取失败，尝试从磁盘读取
+        try {
+          oldContent = await fsPromises.readFile(filePath, 'utf-8')
+        } catch (err) {
+          oldContent = ''
+        }
+      }
+
+      trackerManager.recordChange(filePath, oldContent, markdown, {
+        action: 'save',
+        timestamp: Date.now()
+      }).catch(err => {
+        log.warn('Failed to record file change:', err)
+      })
+
       if (!alreadyExistOnDisk) {
         ipcMain.emit('window-add-file-path', win.id, filePath)
         ipcMain.emit('menu-add-recently-used', filePath)
@@ -259,8 +285,32 @@ ipcMain.on('mt::response-file-save-as', async (e, { id, filename, markdown, path
 
   if (filePath && !canceled) {
     filePath = path.resolve(filePath)
+
     writeMarkdownFile(filePath, markdown, options, win)
-      .then(() => {
+      .then(async () => {
+        // 记录文件变更（使用追踪器中的当前版本内容作为oldContent）
+        const trackerManager = getFileChangeTrackerManager()
+        // 获取追踪器中的当前版本内容，而不是从磁盘读取
+        let oldContent = ''
+        try {
+          const currentResult = await trackerManager.getCurrentContent(filePath)
+          oldContent = currentResult || ''
+        } catch (error) {
+          // 如果获取失败，尝试从磁盘读取
+          try {
+            oldContent = await fsPromises.readFile(filePath, 'utf-8')
+          } catch (err) {
+            oldContent = ''
+          }
+        }
+
+        trackerManager.recordChange(filePath, oldContent, markdown, {
+          action: 'save-as',
+          timestamp: Date.now()
+        }).catch(err => {
+          log.warn('Failed to record file change:', err)
+        })
+
         if (!alreadyExistOnDisk) {
           ipcMain.emit('window-add-file-path', win.id, filePath)
           ipcMain.emit('menu-add-recently-used', filePath)

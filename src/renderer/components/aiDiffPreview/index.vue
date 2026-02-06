@@ -33,6 +33,8 @@
 </template>
 
 <script>
+import { diffLines } from 'diff'
+
 export default {
   name: 'AiDiffPreview',
   props: {
@@ -61,108 +63,53 @@ export default {
     diffLines () {
       if (!this.oldContent && !this.newContent) return []
 
-      const oldLines = this.oldContent ? this.oldContent.split('\n') : []
-      const newLines = this.newContent ? this.newContent.split('\n') : []
-
-      // 使用简单的LCS（最长公共子序列）算法计算diff
+      // 使用jsdiff库计算差异
+      const changes = diffLines(this.oldContent || '', this.newContent || '')
       const lines = []
 
-      // 简单的逐行比较
+      // 跟踪当前行号
       let oldLineNum = 1
       let newLineNum = 1
-      let oldIndex = 0
-      let newIndex = 0
 
-      // 先找到相同的行
-      while (oldIndex < oldLines.length && newIndex < newLines.length) {
-        if (oldLines[oldIndex] === newLines[newIndex]) {
-          // 相同行
-          lines.push({
-            type: 'context',
-            content: oldLines[oldIndex],
-            oldLine: oldLineNum++,
-            newLine: newLineNum++
-          })
-          oldIndex++
-          newIndex++
-        } else {
-          // 查找下一个匹配的行
-          let foundMatch = false
-          // 尝试在旧内容中查找新行
-          for (let i = oldIndex + 1; i < Math.min(oldIndex + 10, oldLines.length); i++) {
-            if (oldLines[i] === newLines[newIndex]) {
-              // 中间的行被删除
-              for (let j = oldIndex; j < i; j++) {
-                lines.push({
-                  type: 'removed',
-                  content: oldLines[j],
-                  oldLine: oldLineNum++,
-                  newLine: ''
-                })
-              }
-              oldIndex = i
-              foundMatch = true
-              break
-            }
-          }
-          // 如果没找到，尝试在新内容中查找旧行
-          if (!foundMatch) {
-            for (let i = newIndex + 1; i < Math.min(newIndex + 10, newLines.length); i++) {
-              if (newLines[i] === oldLines[oldIndex]) {
-                // 中间的行被添加
-                for (let j = newIndex; j < i; j++) {
-                  lines.push({
-                    type: 'added',
-                    content: newLines[j],
-                    oldLine: '',
-                    newLine: newLineNum++
-                  })
-                }
-                newIndex = i
-                foundMatch = true
-                break
-              }
-            }
-          }
-          // 如果都没找到，认为是修改
-          if (!foundMatch) {
-            lines.push({
-              type: 'removed',
-              content: oldLines[oldIndex],
-              oldLine: oldLineNum++,
-              newLine: ''
-            })
+      // 遍历所有变更
+      for (const change of changes) {
+        const changeLines = change.value.split('\n')
+        // 移除最后一个空行（如果存在），因为split会在末尾产生空字符串
+        if (changeLines.length > 0 && changeLines[changeLines.length - 1] === '') {
+          changeLines.pop()
+        }
+
+        if (change.added) {
+          // 添加的行
+          for (const line of changeLines) {
             lines.push({
               type: 'added',
-              content: newLines[newIndex],
+              content: line,
               oldLine: '',
               newLine: newLineNum++
             })
-            oldIndex++
-            newIndex++
+          }
+        } else if (change.removed) {
+          // 删除的行
+          for (const line of changeLines) {
+            lines.push({
+              type: 'removed',
+              content: line,
+              oldLine: oldLineNum++,
+              newLine: ''
+            })
+          }
+        } else {
+          // 未变更的行（上下文）
+          for (const line of changeLines) {
+            lines.push({
+              type: 'context',
+              content: line,
+              oldLine: oldLineNum++,
+              newLine: newLineNum++
+            })
           }
         }
-      }
-
-      // 处理剩余的行
-      while (oldIndex < oldLines.length) {
-        lines.push({
-          type: 'removed',
-          content: oldLines[oldIndex],
-          oldLine: oldLineNum++,
-          newLine: ''
-        })
-        oldIndex++
-      }
-
-      while (newIndex < newLines.length) {
-        lines.push({
-          type: 'added',
-          content: newLines[newIndex],
-          oldLine: '',
-          newLine: newLineNum++
-        })
-        newIndex++
       }
 
       return lines

@@ -17,8 +17,14 @@ const paragraphCtrl = ContentState => {
   ContentState.prototype.selectionChange = function (cursor) {
     const { start, end } = cursor || selection.getCursorRange()
     if (!start || !end) {
-      // TODO: Throw an exception and try to fix this later (GH#848).
-      throw new Error('selectionChange: expected cursor but cursor is null.')
+      // Return a default selection object when cursor is null
+      // This can happen when editor is not ready or has no focus
+      return {
+        start: null,
+        end: null,
+        affiliation: [],
+        cursorCoords: { x: 0, y: 0, width: 0 }
+      }
     }
     const cursorCoords = selection.getCursorCoords()
     const startBlock = this.getBlock(start.key)
@@ -44,6 +50,10 @@ const paragraphCtrl = ContentState => {
 
   ContentState.prototype.getCommonParent = function () {
     const { start, end, affiliation } = this.selectionChange()
+    if (!start || !end) {
+      // Return default values when cursor is null
+      return { parent: null, startIndex: undefined, endIndex: undefined }
+    }
     const parent = affiliation.length ? affiliation[0] : null
     const startBlock = this.getBlock(start.key)
     const endBlock = this.getBlock(end.key)

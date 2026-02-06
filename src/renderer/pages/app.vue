@@ -34,6 +34,7 @@
       <rename></rename>
       <tweet></tweet>
       <import-modal></import-modal>
+      <file-history></file-history>
     </div>
     <ai-panel v-if="init"></ai-panel>
   </div>
@@ -52,6 +53,7 @@ import ExportSettingDialog from '@/components/exportSettings'
 import Rename from '@/components/rename'
 import Tweet from '@/components/tweet'
 import ImportModal from '@/components/import'
+import FileHistory from '@/components/fileHistory'
 import { loadingPageMixins } from '@/mixins'
 import { mapState, mapMutations } from 'vuex'
 import bus from '@/bus'
@@ -71,7 +73,8 @@ export default {
     Rename,
     Tweet,
     ImportModal,
-    CommandPalette
+    CommandPalette,
+    FileHistory
   },
   mixins: [loadingPageMixins],
   data () {

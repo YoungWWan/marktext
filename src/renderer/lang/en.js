@@ -212,7 +212,9 @@ export default {
     saveAll: 'Save All',
     closeAll: 'Close All',
     emptyProject: 'Empty project',
-    createFile: 'Create File'
+    createFile: 'Create File',
+    createFolder: 'New Folder',
+    refresh: 'Refresh'
   },
   // Sidebar - Context Menu
   sidebarContextMenu: {
@@ -223,13 +225,35 @@ export default {
     paste: 'Paste',
     rename: 'Rename',
     moveToTrash: 'Move To Trash',
-    showInFolder: 'Show In Folder'
+    showInFolder: 'Show In Folder',
+    viewHistory: 'View History'
+  },
+  // File History
+  fileHistory: {
+    title: 'File History',
+    loading: 'Loading...',
+    empty: 'No history records',
+    base: 'Base',
+    undo: 'Undo',
+    redo: 'Redo',
+    restore: 'Restore to This Version',
+    restoreSuccess: 'Restored to the selected version',
+    close: 'Close',
+    diffTitle: 'Diff Preview',
+    noDiff: 'No differences',
+    viewHistory: 'View History',
+    action: {
+      save: 'Save',
+      'save-as': 'Save As',
+      'ai-write': 'AI Write',
+      'ai-edit': 'AI Edit'
+    }
   },
   // File Change Notifications
   fileChange: {
     changedOnDisk: '"{filename}" has been changed on disk. Do you want to reload it?',
     removedOnDisk: '"{filename}" has been removed on disk.',
-    changedByAI: '"{filename}" has been modified by AI. Do you want to accept the changes?'
+    changedByAI: 'File has been modified by AI. You can view the diff and undo via file history'
   },
   // Sidebar - Table of Contents
   toc: {
@@ -335,6 +359,9 @@ export default {
       reject: 'Reject',
       accepted: 'Accepted',
       rejected: 'Rejected'
+    },
+    fileModified: {
+      hint: 'File has been modified. You can view the diff and undo via file history'
     },
     alwaysAllow: 'Always Allow',
     error: 'Error',

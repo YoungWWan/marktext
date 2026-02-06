@@ -8,6 +8,7 @@ import path from 'path'
 import { exec } from 'child_process'
 import { promisify } from 'util'
 import { glob } from 'glob'
+import { getFileChangeTrackerManager } from '../filesystem/fileChangeTracker'
 
 const execAsync = promisify(exec)
 
@@ -34,7 +35,46 @@ export function initToolHandlers () {
       // 确保目录存在
       await fs.mkdir(path.dirname(fullPath), { recursive: true })
 
+      // 获取旧内容用于历史记录
+      let actualOldContent = oldContent
+      if (actualOldContent === undefined) {
+        try {
+          const trackerManager = getFileChangeTrackerManager()
+          const currentResult = await trackerManager.getCurrentContent(fullPath)
+          actualOldContent = currentResult || ''
+        } catch (error) {
+          // 如果获取失败，尝试从磁盘读取
+          try {
+            actualOldContent = await fs.readFile(fullPath, 'utf-8')
+          } catch (err) {
+            actualOldContent = ''
+          }
+        }
+      }
+
       await fs.writeFile(fullPath, content, 'utf-8')
+
+      // 记录文件变更到历史记录，并获取版本号
+      let newVersion = null
+      let previousVersion = null
+      try {
+        const trackerManager = getFileChangeTrackerManager()
+        // 先获取当前版本（修改前的版本）
+        const tracker = await trackerManager.getTracker(fullPath)
+        previousVersion = tracker.getCurrentVersion()
+        
+        // 记录变更，获取新版本号
+        const recordResult = await trackerManager.recordChange(fullPath, actualOldContent, content, {
+          action: 'ai-write',
+          timestamp: Date.now()
+        })
+        if (recordResult.success) {
+          newVersion = recordResult.version
+        }
+      } catch (error) {
+        // 记录历史失败不影响文件写入，只记录警告
+        console.warn('Failed to record file change history:', error)
+      }
 
       // 如果是AI修改的文件，发送特殊消息标记
       if (oldContent !== undefined || diffPreview) {
@@ -42,14 +82,19 @@ export function initToolHandlers () {
         if (win) {
           win.webContents.send('mt::ai-file-modified', {
             pathname: fullPath,
-            oldContent: oldContent || '',
+            oldContent: actualOldContent,
             newContent: content,
             diffPreview: diffPreview || null
           })
         }
       }
 
-      return { success: true, output: `Successfully wrote to ${filePath}` }
+      return { 
+        success: true, 
+        output: `Successfully wrote to ${filePath}`,
+        version: newVersion,
+        previousVersion: previousVersion
+      }
     } catch (error) {
       return { success: false, error: error.message }
     }
@@ -59,14 +104,50 @@ export function initToolHandlers () {
   ipcMain.handle('ai:tool:edit', async (event, { path: filePath, oldString, newString, workingDirectory, diffPreview }) => {
     try {
       const fullPath = path.isAbsolute(filePath) ? filePath : path.join(workingDirectory, filePath)
-      const content = await fs.readFile(fullPath, 'utf-8')
 
-      if (!content.includes(oldString)) {
+      // 优先从追踪器获取当前内容（可能包含未保存的修改），如果失败则从磁盘读取
+      let oldContent = ''
+      try {
+        const trackerManager = getFileChangeTrackerManager()
+        const currentResult = await trackerManager.getCurrentContent(fullPath)
+        oldContent = currentResult || ''
+      } catch (error) {
+        // 如果获取失败，从磁盘读取
+        try {
+          oldContent = await fs.readFile(fullPath, 'utf-8')
+        } catch (err) {
+          return { success: false, error: 'File not found' }
+        }
+      }
+
+      if (!oldContent.includes(oldString)) {
         return { success: false, error: 'Old string not found in file' }
       }
 
-      const newContent = content.replace(oldString, newString)
+      const newContent = oldContent.replace(oldString, newString)
       await fs.writeFile(fullPath, newContent, 'utf-8')
+
+      // 记录文件变更到历史记录，并获取版本号
+      let newVersion = null
+      let previousVersion = null
+      try {
+        const trackerManager = getFileChangeTrackerManager()
+        // 先获取当前版本（修改前的版本）
+        const tracker = await trackerManager.getTracker(fullPath)
+        previousVersion = tracker.getCurrentVersion()
+        
+        // 记录变更，获取新版本号
+        const recordResult = await trackerManager.recordChange(fullPath, oldContent, newContent, {
+          action: 'ai-edit',
+          timestamp: Date.now()
+        })
+        if (recordResult.success) {
+          newVersion = recordResult.version
+        }
+      } catch (error) {
+        // 记录历史失败不影响文件写入，只记录警告
+        console.warn('Failed to record file change history:', error)
+      }
 
       // 如果是AI修改的文件，发送特殊消息标记
       if (diffPreview) {
@@ -74,14 +155,19 @@ export function initToolHandlers () {
         if (win) {
           win.webContents.send('mt::ai-file-modified', {
             pathname: fullPath,
-            oldContent: content,
+            oldContent: oldContent,
             newContent: newContent,
             diffPreview: diffPreview
           })
         }
       }
 
-      return { success: true, output: `Successfully edited ${filePath}` }
+      return { 
+        success: true, 
+        output: `Successfully edited ${filePath}`,
+        version: newVersion,
+        previousVersion: previousVersion
+      }
     } catch (error) {
       return { success: false, error: error.message }
     }

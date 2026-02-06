@@ -3,6 +3,7 @@
     class="source-code"
     ref="sourceCode"
   >
+
   </div>
 </template>
 
@@ -15,6 +16,8 @@ import bus from '../../bus'
 import { oneDarkThemes, railscastsThemes } from '@/config'
 
 export default {
+  components: {
+  },
   props: {
     markdown: String,
     cursor: Object,
@@ -45,7 +48,8 @@ export default {
       isSyncingScroll: false, // Flag to prevent scroll sync loops
       scrollSyncTimer: null, // Timer for debouncing scroll sync
       lastSyncLine: -1, // Last synced line to avoid unnecessary updates
-      sizerObserver: null // Observer for CodeMirror-sizer style changes
+      sizerObserver: null, // Observer for CodeMirror-sizer style changes
+      resizeHandler: null // 窗口大小改变监听器
     }
   },
 
@@ -53,7 +57,13 @@ export default {
     textDirection: function (value, oldValue) {
       const { editor } = this
       if (value !== oldValue && editor) {
-        setTextDirection(editor, value)
+        // 只在 RTL 语言时设置 direction，LTR 时移除 direction 设置
+        if (value === 'rtl') {
+          setTextDirection(editor, value)
+        } else {
+          // 对于 LTR，移除 direction 设置，使用默认值
+          editor.setOption('direction', 'ltr')
+        }
       }
     },
     'currentTab.id' (newId) {
@@ -136,7 +146,8 @@ export default {
           autofocus: true,
           lineWrapping: true,
           styleActiveLine: true,
-          direction: textDirection,
+          // 只在 RTL 语言时设置 direction，LTR 时使用默认值避免光标位置问题
+          ...(textDirection === 'rtl' ? { direction: textDirection } : {}),
           // The amount of updates needed when scrolling. Settings this to >Infinity< or use CSS
           // >height: auto< result in bad performance because the whole document is always rendered.
           // Since we are using >height: auto< setting this to >Infinity< to fix #171. The best
@@ -158,6 +169,11 @@ export default {
         // Init CodeMirror
         const editor = this.editor = codeMirror(container, codeMirrorConfig)
 
+        // 通知diff组件编辑器已就绪
+        this.$nextTick(() => {
+          bus.$emit('source-code-editor-ready', editor)
+        })
+
         // Remove negative margin-bottom from CodeMirror-sizer to fix bottom spacing issue
         // This is needed because CodeMirror automatically adds margin-bottom: -12px to the sizer
         // IMPORTANT: Don't touch margin-left as it's needed for line number spacing
@@ -176,13 +192,17 @@ export default {
 
           const wrapper = editor.getWrapperElement()
 
-          // Hide horizontal scrollbar to prevent bottom spacing
+          // 移除max-width限制，让编辑器占满容器
+          if (wrapper.style.maxWidth) {
+            wrapper.style.maxWidth = 'none'
+          }
+
+          // 隐藏横向滚动条
           const hideHorizontalScrollbar = () => {
             const scrollElement = wrapper.querySelector('.CodeMirror-scroll')
             if (scrollElement) {
               scrollElement.style.overflowX = 'hidden'
             }
-            // Also hide any horizontal scrollbar elements
             const hscrollbar = wrapper.querySelector('.CodeMirror-hscrollbar')
             if (hscrollbar) {
               hscrollbar.style.display = 'none'
@@ -197,30 +217,10 @@ export default {
 
           hideHorizontalScrollbar()
 
-          // Also listen for updates and remove it if CodeMirror re-adds it
-          const sizer = wrapper.querySelector('.CodeMirror-sizer')
-          if (sizer) {
-            const observer = new MutationObserver(() => {
-              removeNegativeMargin()
-              hideHorizontalScrollbar()
-            })
-            observer.observe(sizer, {
-              attributes: true,
-              attributeFilter: ['style']
-            })
-            // Store observer for cleanup
-            this.sizerObserver = observer
-
-            // Also listen to CodeMirror's update events
-            editor.on('update', () => {
-              removeNegativeMargin()
-              hideHorizontalScrollbar()
-            })
-            editor.on('renderLine', () => {
-              removeNegativeMargin()
-              hideHorizontalScrollbar()
-            })
-          }
+          // 延迟刷新，确保容器尺寸正确
+          setTimeout(() => {
+            editor.refresh()
+          }, 50)
         })
 
         bus.$on('file-loaded', this.handleFileChange)
@@ -249,6 +249,16 @@ export default {
         }
         this.tabId = id
         console.log('[SourceCode] Editor initialized', { tabId: this.tabId, markdownLength: markdown.length })
+
+        // 监听窗口大小改变，确保CodeMirror宽度始终正确
+        this.resizeHandler = () => {
+          if (this.editor) {
+            this.$nextTick(() => {
+              this.editor.refresh()
+            })
+          }
+        }
+        window.addEventListener('resize', this.resizeHandler)
       })
     },
     beforeDestroy () {
@@ -262,6 +272,10 @@ export default {
       if (this.sizerObserver) {
         this.sizerObserver.disconnect()
         this.sizerObserver = null
+      }
+      if (this.resizeHandler) {
+        window.removeEventListener('resize', this.resizeHandler)
+        this.resizeHandler = null
       }
       this.cleanupScrollSync()
 
@@ -657,6 +671,7 @@ export default {
         console.warn('[SourceCode] Failed to scroll to line:', e)
       }
     }
+
   }
 }
 </script>
@@ -665,7 +680,9 @@ export default {
   .source-code {
     height: 100%;
     box-sizing: border-box;
-    overflow: auto;
+    overflow: hidden !important;
+    overflow-y: hidden !important;
+    overflow-x: hidden !important;
     display: flex;
     flex-direction: column;
     padding-bottom: 0 !important;
@@ -681,29 +698,29 @@ export default {
   .source-code-panel .source-code {
     padding-bottom: 0 !important;
     margin-bottom: 0 !important;
+    width: 100% !important;
   }
   /* Base CodeMirror styles - remove all top and bottom margins/padding */
   .source-code .CodeMirror {
-    height: auto;
-    margin: 0 auto !important;
+    height: 100%;
     padding: 0 !important;
-    max-width: var(--editorAreaWidth);
     background: transparent;
     flex: 1;
+    overflow: hidden !important;
+    display: flex;
+    flex-direction: column;
   }
 
-  /* In split-view mode, remove all top and bottom margins/padding to match preview editor style */
+  /* 在源码模式下，移除最大宽度限制和居中边距，让编辑器占满整个容器 */
   .source-code-panel .source-code .CodeMirror {
-    margin: 0 20px !important;
-    padding: 0 !important;
-    max-width: none;
+    margin: 0 !important;
+    max-width: none !important;
   }
 
-  /* More specific selector for split-view mode */
+  /* split-view模式 */
   .container.split-view .source-code-panel .source-code .CodeMirror {
-    margin: 0 20px !important;
-    padding: 0 !important;
-    max-width: none;
+    margin: 0 !important;
+    max-width: none !important;
   }
 
   /* Remove padding from CodeMirror internal elements to match preview editor style */
@@ -712,7 +729,17 @@ export default {
     margin: 0 !important;
     /* Hide horizontal scrollbar to prevent bottom spacing */
     overflow-x: hidden !important;
-    overflow-y: auto;
+    overflow-y: auto !important;
+    flex: 1;
+    height: 100%;
+    /* 确保滚动区域可以正常点击 */
+    pointer-events: auto;
+  }
+
+  /* 让滚动条更贴近右侧边框（所有模式下） */
+  .source-code-panel .source-code .CodeMirror-scroll {
+    padding-right: 0 !important;
+    margin-right: 0 !important;
   }
 
   /* Hide horizontal scrollbar completely */
@@ -730,6 +757,20 @@ export default {
   .source-code .CodeMirror-lines {
     padding: 0 !important;
     margin: 0 !important;
+    /* 确保文本区域可以正常点击 */
+    pointer-events: auto;
+  }
+
+  /* 在源码模式下，给内容区域添加左侧 padding，而不是给整个容器添加 margin */
+  /* 这样滚动条可以紧贴右侧边框 */
+  /* 注意：不要添加 padding-left，因为这会阻止点击行首 */
+  .source-code-panel .source-code .CodeMirror-lines {
+    padding-left: 0 !important;
+  }
+
+  /* split-view 模式下也保持一致 */
+  .container.split-view .source-code-panel .source-code .CodeMirror-lines {
+    padding-left: 0 !important;
   }
 
   .source-code .CodeMirror-sizer {
@@ -739,8 +780,35 @@ export default {
     margin-top: 0 !important;
     margin-right: 0 !important;
     margin-bottom: 0 !important;
-    /* Keep margin-left for line numbers - don't override it! */
-    /* margin-left is set by CodeMirror to accommodate line numbers (usually 30px) */
+    /* 固定margin-left为行号区域宽度 + 间距，避免CodeMirror计算错误 */
+    /* 增加一些间距让文本和行号之间有足够的空间 */
+    margin-left: 50px !important;
+    /* 确保文本区域可以正常点击 */
+    pointer-events: auto;
+  }
+
+  /* 强制修复sizer的margin-left，即使有内联样式也覆盖 */
+  .source-code .CodeMirror-sizer[style*="margin-left"] {
+    margin-left: 50px !important;
+  }
+
+  /* 修复gutter-wrapper的left值，确保行号正确显示 */
+  .source-code .CodeMirror-gutter-wrapper {
+    left: -34px !important;
+    /* 允许点击事件穿透到文本区域 */
+    pointer-events: none;
+  }
+
+  /* 行号本身可以点击（用于选择行） */
+  .source-code .CodeMirror-gutter-wrapper .CodeMirror-linenumber {
+    pointer-events: auto;
+  }
+
+  /* 修复gutter-background的width */
+  .source-code .CodeMirror-gutter-background {
+    width: 34px !important;
+    /* 确保背景不阻止点击 */
+    pointer-events: none;
   }
 
   /* Force remove negative margin-bottom from CodeMirror-sizer (overrides inline styles) */
@@ -774,19 +842,33 @@ export default {
     padding: 0 !important;
   }
 
-  /* Add spacing between line numbers and text content */
+  /* 行号区域固定在左侧，宽度固定 */
   .source-code .CodeMirror-gutters {
     border-right: none;
     background-color: transparent;
     margin: 0 !important;
     padding: 0 !important;
-    /* Add right padding to create spacing between line numbers and text */
-    padding-right: 16px !important;
+    position: absolute;
+    left: 0;
+    /* 固定宽度，避免CodeMirror计算错误 */
+    width: 34px !important;
+    /* 不要使用 padding-right，因为它会增加元素的实际占用宽度 */
+    /* 间距通过 CodeMirror-sizer 的 margin-left 来实现 */
+    /* 允许点击事件穿透到文本区域 */
+    pointer-events: none;
+  }
+
+  /* 行号本身可以点击（用于选择行） */
+  .source-code .CodeMirror-linenumber {
+    pointer-events: auto;
   }
 
   /* Also add spacing to line number elements for better visual separation */
   .source-code .CodeMirror-linenumber {
-    padding-right: 8px !important;
+    /* 移除 padding-right，避免行号区域占用过多空间 */
+    padding-right: 0 !important;
+    /* 使用 text-align 来对齐行号 */
+    text-align: right;
   }
 
   .source-code .CodeMirror-activeline-background,
@@ -846,8 +928,17 @@ export default {
     padding-bottom: 0 !important;
   }
 
-  /* Hide horizontal scrollbar and remove its space */
-  .source-code .CodeMirror {
+  /* 确保 CodeMirror wrapper 不显示滚动条，只有 scroll 元素显示 */
+  /* 注意：上面的 .source-code .CodeMirror 已经设置了 overflow: hidden !important */
+  .source-code .CodeMirror > .CodeMirror-scroll {
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+  }
+
+  /* 确保所有 CodeMirror 的直接子元素（除了 scroll）都不显示滚动条 */
+  .source-code .CodeMirror > *:not(.CodeMirror-scroll) {
+    overflow: hidden !important;
+    overflow-y: hidden !important;
     overflow-x: hidden !important;
   }
 
@@ -867,4 +958,5 @@ export default {
     padding: 0 !important;
     overflow: hidden !important;
   }
+
 </style>

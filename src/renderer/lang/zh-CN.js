@@ -212,7 +212,9 @@ export default {
     saveAll: '全部保存',
     closeAll: '全部关闭',
     emptyProject: '空项目',
-    createFile: '创建文件'
+    createFile: '创建文件',
+    createFolder: '新建文件夹',
+    refresh: '刷新'
   },
   // Sidebar - Context Menu
   sidebarContextMenu: {
@@ -223,13 +225,35 @@ export default {
     paste: '粘贴',
     rename: '重命名',
     moveToTrash: '移动到回收站',
-    showInFolder: '在文件夹中显示'
+    showInFolder: '在文件夹中显示',
+    viewHistory: '查看历史'
+  },
+  // File History
+  fileHistory: {
+    title: '文件历史记录',
+    loading: '加载中...',
+    empty: '暂无历史记录',
+    base: '基准',
+    undo: '撤销',
+    redo: '重做',
+    restore: '恢复到此版本',
+    restoreSuccess: '已恢复到指定版本',
+    close: '关闭',
+    diffTitle: '差异对比',
+    noDiff: '无差异',
+    viewHistory: '查看历史',
+    action: {
+      save: '保存',
+      'save-as': '另存为',
+      'ai-write': 'AI写入',
+      'ai-edit': 'AI编辑'
+    }
   },
   // File Change Notifications
   fileChange: {
     changedOnDisk: '"{filename}" 已在磁盘上被修改。是否要重新加载？',
     removedOnDisk: '"{filename}" 已在磁盘上被删除。',
-    changedByAI: '"{filename}" 已被AI修改。是否接受修改？'
+    changedByAI: '文件已被AI修改，可通过文件历史查看对比'
   },
   // Sidebar - Table of Contents
   toc: {
@@ -337,6 +361,9 @@ export default {
       reject: '拒绝',
       accepted: '已接受',
       rejected: '已拒绝'
+    },
+    fileModified: {
+      hint: '文件已修改，可通过文件历史查看对比和撤销'
     },
     alwaysAllow: '始终允许',
     error: '错误',

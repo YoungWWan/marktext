@@ -100,13 +100,14 @@ class AIService {
           hostname: httpOptions.hostname,
           path: httpOptions.path,
           headers: Object.keys(httpOptions.headers),
-          body: requestBodyObj ? {
-            model: requestBodyObj.model,
-            messagesCount: requestBodyObj.messages ? requestBodyObj.messages.length : 0,
-            toolsCount: requestBodyObj.tools ? requestBodyObj.tools.length : 0,
-            stream: requestBodyObj.stream,
-            lastMessage: requestBodyObj.messages && requestBodyObj.messages.length > 0
-              ? {
+          body: requestBodyObj
+            ? {
+              model: requestBodyObj.model,
+              messagesCount: requestBodyObj.messages ? requestBodyObj.messages.length : 0,
+              toolsCount: requestBodyObj.tools ? requestBodyObj.tools.length : 0,
+              stream: requestBodyObj.stream,
+              lastMessage: requestBodyObj.messages && requestBodyObj.messages.length > 0
+                ? {
                   role: requestBodyObj.messages[requestBodyObj.messages.length - 1].role,
                   content: typeof requestBodyObj.messages[requestBodyObj.messages.length - 1].content === 'string'
                     ? requestBodyObj.messages[requestBodyObj.messages.length - 1].content.substring(0, 100)
@@ -114,8 +115,9 @@ class AIService {
                       ? `[${requestBodyObj.messages[requestBodyObj.messages.length - 1].content.length} items]`
                       : requestBodyObj.messages[requestBodyObj.messages.length - 1].content)
                 }
-              : null
-          } : null
+                : null
+            }
+            : null
         })
 
         let buffer = ''

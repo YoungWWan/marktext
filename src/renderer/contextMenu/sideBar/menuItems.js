@@ -86,3 +86,13 @@ export const SHOW_IN_FOLDER = {
     contextMenu.showInFolder()
   }
 }
+
+export const VIEW_HISTORY = {
+  get label () {
+    return i18n.t('sidebarContextMenu.viewHistory')
+  },
+  id: 'viewHistoryMenuItem',
+  click (menuItem, browserWindow) {
+    contextMenu.viewHistory()
+  }
+}

@@ -42,6 +42,21 @@
           <use xlink:href="#icon-arrow"></use>
         </svg>
         <span class="default-cursor text-overflow" @click.stop="toggleDirectories()">{{ projectTree.name }}</span>
+        <a href="javascript:;" @click.stop="createNewFile" :title="$t('fileTree.createFile') || '新建文档'">
+          <svg class="icon" aria-hidden="true">
+            <use xlink:href="#icon-plus"></use>
+          </svg>
+        </a>
+        <a href="javascript:;" @click.stop="createNewFolder" :title="$t('fileTree.createFolder') || '新建文件夹'">
+          <svg class="icon" aria-hidden="true">
+            <use xlink:href="#icon-folder-open"></use>
+          </svg>
+        </a>
+        <a href="javascript:;" @click.stop="refreshProject" :title="$t('fileTree.refresh') || '刷新'">
+          <svg class="icon icon-refresh" aria-hidden="true" viewBox="0 0 24 24" width="14" height="14">
+            <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z" fill="currentColor"/>
+          </svg>
+        </a>
       </div>
       <div class="tree-wrapper" v-show="showDirectories">
         <folder
@@ -159,6 +174,21 @@ export default {
       this.$store.dispatch('CHANGE_ACTIVE_ITEM', this.projectTree)
       bus.$emit('SIDEBAR::new', 'file')
     },
+    createNewFile () {
+      this.$store.dispatch('CHANGE_ACTIVE_ITEM', this.projectTree)
+      bus.$emit('SIDEBAR::new', 'file')
+    },
+    createNewFolder () {
+      this.$store.dispatch('CHANGE_ACTIVE_ITEM', this.projectTree)
+      bus.$emit('SIDEBAR::new', 'directory')
+    },
+    refreshProject () {
+      // 重新加载项目树
+      if (this.projectTree && this.projectTree.pathname) {
+        const { ipcRenderer } = require('electron')
+        ipcRenderer.send('mt::open-directory', this.projectTree.pathname)
+      }
+    },
     toggleOpenedFiles () {
       this.showOpenedFiles = !this.showOpenedFiles
     },
@@ -274,6 +304,9 @@ export default {
         margin-left: 8px;
         color: var(--sideBarIconColor);
         opacity: 0;
+        display: flex;
+        align-items: center;
+        text-decoration: none;
       }
       & > a:hover {
         color: var(--highlightThemeColor);
@@ -281,6 +314,9 @@ export default {
       & > a.active {
         color: var(--highlightThemeColor);
       }
+    }
+    & > .title:hover > a {
+      opacity: 1;
     }
     & > .tree-wrapper {
       overflow: auto;

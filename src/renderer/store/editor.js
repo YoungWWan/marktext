@@ -303,11 +303,19 @@ const mutations = {
 
   // 设置AI修改的文件信息
   SET_AI_MODIFIED_FILE (state, { pathname, oldContent, newContent, diffPreview }) {
+    console.log('[Store] SET_AI_MODIFIED_FILE:', {
+      pathname,
+      hasDiffPreview: !!diffPreview,
+      hasLines: !!(diffPreview && diffPreview.lines),
+      linesCount: diffPreview && diffPreview.lines ? diffPreview.lines.length : 0,
+      allPaths: Object.keys(state.aiModifiedFiles)
+    })
     state.aiModifiedFiles[pathname] = {
       oldContent,
       newContent,
       diffPreview
     }
+    console.log('[Store] After SET_AI_MODIFIED_FILE, all paths:', Object.keys(state.aiModifiedFiles))
   },
   // 清除AI修改的文件信息
   CLEAR_AI_MODIFIED_FILE (state, pathname) {
@@ -1043,8 +1051,12 @@ const actions = {
 
   SELECTION_CHANGE ({ commit }, changes) {
     const { start, end } = changes
+    // Handle null cursor case (editor not ready or has no focus)
+    if (!start || !end || !start.key || !end.key) {
+      return
+    }
     // Set search keyword to store.
-    if (start.key === end.key && start.block.text) {
+    if (start.key === end.key && start.block && start.block.text) {
       const value = start.block.text.substring(start.offset, end.offset)
       commit('SET_SEARCH', {
         matches: [],
@@ -1182,48 +1194,20 @@ const actions = {
             // 检查是否是AI修改的文件
             const aiFileInfo = state.aiModifiedFiles[pathname]
             if (aiFileInfo) {
-              // 是AI修改的文件，检查是否已经有通知
-              const existingNotification = tab.notifications && tab.notifications.find(n => n.exclusiveType === 'ai_file_changed')
-              if (existingNotification) {
-                // 更新现有通知的action和aiFileInfo（确保使用最新的）
-                existingNotification.aiFileInfo = aiFileInfo
-                existingNotification.action = status => {
-                  if (status) {
-                    // 用户确认接受修改
-                    commit('LOAD_CHANGE', change)
-                    commit('CLEAR_AI_MODIFIED_FILE', pathname)
-                  } else {
-                    // 用户拒绝修改，回滚到旧内容
-                    const oldChange = { ...change, data: aiFileInfo.oldContent }
-                    commit('LOAD_CHANGE', oldChange)
-                    commit('CLEAR_AI_MODIFIED_FILE', pathname)
-                  }
+              // 是AI修改的文件，自动加载修改后的内容（文件已经自动修改了）
+              // 但不自动标记为"已接受"，保持待确认状态，让用户手动点击确认或撤销
+              // 清除可能存在的通知
+              if (tab.notifications) {
+                const existingNotificationIndex = tab.notifications.findIndex(n => n.exclusiveType === 'ai_file_changed')
+                if (existingNotificationIndex !== -1) {
+                  tab.notifications.splice(existingNotificationIndex, 1)
                 }
-              } else {
-                // 创建新通知
-                commit('SET_SAVE_STATUS_BY_TAB', { tab, status: false })
-                commit('PUSH_TAB_NOTIFICATION', {
-                  tabId: id,
-                  msg: '', // 不显示文本提示
-                  showConfirm: true,
-                  exclusiveType: 'ai_file_changed',
-                  style: 'info',
-                  aiFileInfo: aiFileInfo,
-                  action: status => {
-                    if (status) {
-                      // 用户确认接受修改
-                      commit('LOAD_CHANGE', change)
-                      commit('CLEAR_AI_MODIFIED_FILE', pathname)
-                    } else {
-                      // 用户拒绝修改，回滚到旧内容
-                      const oldChange = { ...change, data: aiFileInfo.oldContent }
-                      commit('LOAD_CHANGE', oldChange)
-                      commit('CLEAR_AI_MODIFIED_FILE', pathname)
-                    }
-                  }
-                })
               }
-              // 不自动加载文件内容，等待用户确认
+              // 直接加载修改后的内容（文件已经修改了，需要刷新编辑器显示）
+              commit('LOAD_CHANGE', change)
+              commit('CLEAR_AI_MODIFIED_FILE', pathname)
+              // 不发送accepted事件，保持待确认状态
+              // 用户需要手动点击"确认"按钮才会标记为已接受
               return
             }
 
@@ -1242,18 +1226,8 @@ const actions = {
               }
             }
 
-            commit('SET_SAVE_STATUS_BY_TAB', { tab, status: false })
-            commit('PUSH_TAB_NOTIFICATION', {
-              tabId: id,
-              msg: i18n.t('fileChange.changedOnDisk', { filename }),
-              showConfirm: true,
-              exclusiveType: 'file_changed',
-              action: status => {
-                if (status) {
-                  commit('LOAD_CHANGE', change)
-                }
-              }
-            })
+            // 直接静默从磁盘重新加载，不显示弹窗
+            commit('LOAD_CHANGE', change)
             break
           }
           default:
@@ -1272,6 +1246,24 @@ const actions = {
       const tab = tabs.find(t => isSamePathSync(t.pathname, pathname))
       let actualOldContent = oldContent
 
+      // 使用tab的pathname（如果找到）来确保路径格式一致，否则使用标准化的pathname
+      let normalizedPathname = pathname
+      if (tab && tab.pathname) {
+        normalizedPathname = tab.pathname
+        console.log('[Store] LISTEN_FOR_AI_FILE_MODIFIED: Using tab pathname', {
+          originalPathname: pathname,
+          tabPathname: tab.pathname,
+          normalizedPathname
+        })
+      } else {
+        normalizedPathname = path.normalize(pathname)
+        console.log('[Store] LISTEN_FOR_AI_FILE_MODIFIED: No tab found, using normalized pathname', {
+          originalPathname: pathname,
+          normalizedPathname,
+          allTabs: tabs.map(t => t.pathname)
+        })
+      }
+
       if (tab && tab.markdown) {
         // 使用编辑器当前的内容作为oldContent
         if (typeof tab.markdown === 'string') {
@@ -1289,13 +1281,27 @@ const actions = {
         }
       }
 
+      // 确保diffPreview包含lines字段（如果不存在则计算）
+      let finalDiffPreview = diffPreview
+      if (diffPreview && (!diffPreview.lines || !Array.isArray(diffPreview.lines) || diffPreview.lines.length === 0)) {
+        // 如果diffPreview没有lines，从oldContent和newContent计算
+        const { calculateDiffLines } = require('../util/diff')
+        const diffResult = calculateDiffLines(actualOldContent || '', newContent || '')
+        finalDiffPreview = {
+          ...diffPreview,
+          lines: diffResult.lines || [],
+          stats: diffResult.stats || { additions: 0, deletions: 0 }
+        }
+      }
+
       const aiFileInfo = {
         oldContent: actualOldContent,
         newContent: newContent,
-        diffPreview: diffPreview
+        diffPreview: finalDiffPreview
       }
 
-      commit('SET_AI_MODIFIED_FILE', { pathname, oldContent: actualOldContent, newContent, diffPreview })
+      // 使用标准化的pathname存储，确保路径格式一致
+      commit('SET_AI_MODIFIED_FILE', { pathname: normalizedPathname, oldContent: actualOldContent, newContent, diffPreview: finalDiffPreview })
 
       // 如果文件已经在tabs中打开，立即显示diff预览通知
       if (tab) {
