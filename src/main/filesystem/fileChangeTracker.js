@@ -253,6 +253,17 @@ class FileChangeTrackerManager {
     const result = tracker.gotoVersion(targetVersion)
 
     if (result.success) {
+      // 实际将文件内容写回磁盘
+      try {
+        const content = result.content
+        await fs.writeFile(filePath, content, 'utf-8')
+      } catch (error) {
+        log.error(`Failed to write file during gotoVersion: ${filePath}`, error)
+        return {
+          success: false,
+          error: error.message
+        }
+      }
       await this.saveTracker(filePath)
     }
 

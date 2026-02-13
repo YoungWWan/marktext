@@ -22,7 +22,8 @@ const state = {
   tabs: [],
   listToc: [], // Just use for deep equal check. and replace with new toc if needed.
   toc: [],
-  aiModifiedFiles: {} // 存储AI修改的文件信息 { pathname: { oldContent, newContent, diffPreview } }
+  aiModifiedFiles: {}, // 存储AI修改的文件信息 { pathname: { oldContent, newContent, diffPreview } }
+  undoingFiles: {} // 存储正在undo的文件路径，用于防止文件监听器重新加载文件 { pathname: timestamp }
 }
 
 const mutations = {
@@ -320,6 +321,14 @@ const mutations = {
   // 清除AI修改的文件信息
   CLEAR_AI_MODIFIED_FILE (state, pathname) {
     delete state.aiModifiedFiles[pathname]
+  },
+  // 标记文件正在undo操作中
+  SET_UNDOING_FILE (state, pathname) {
+    state.undoingFiles[pathname] = Date.now()
+  },
+  // 清除undo标记
+  CLEAR_UNDOING_FILE (state, pathname) {
+    delete state.undoingFiles[pathname]
   },
   // Push a tab specific notification on stack that never disappears.
   PUSH_TAB_NOTIFICATION (state, data) {
@@ -1191,6 +1200,15 @@ const actions = {
           }
           case 'add':
           case 'change': {
+            // 检查文件是否正在undo操作中（在3秒内）
+            const undoingTimestamp = state.undoingFiles[pathname]
+            if (undoingTimestamp && (Date.now() - undoingTimestamp) < 3000) {
+              // 文件正在undo操作中，忽略这次文件变更事件
+              // 因为undo操作会手动刷新文档，不需要文件监听器重新加载
+              console.log(`[Store] Ignoring file change event for ${pathname} (undoing in progress)`)
+              return
+            }
+
             // 检查是否是AI修改的文件
             const aiFileInfo = state.aiModifiedFiles[pathname]
             if (aiFileInfo) {

@@ -159,10 +159,8 @@
                   <div class="tool-header" @click="toggleToolDetails(item.messageId + '-' + item.toolIndex)">
                     <span class="tool-icon">{{ getToolIcon(item.tool.name) }}</span>
                     <span class="tool-name">{{ item.tool.name }}</span>
-                    <span class="tool-status" :class="item.tool.status">
-                      <span v-if="item.tool.diffAction === 'accepted'" class="diff-status-accepted">{{ $t('ai.diffPreview.accepted') }}</span>
-                      <span v-else-if="item.tool.diffAction === 'rejected'" class="diff-status-rejected">{{ $t('ai.diffPreview.rejected') }}</span>
-                      <span v-else>{{ getToolStatusText(item.tool.status) }}</span>
+                    <span class="tool-status" :class="getToolStatusClass(item.tool)">
+                      {{ getToolStatusText(item.tool) }}
                     </span>
                     <span class="toggle-icon">{{ isToolExpanded(item) ? '▼' : '▶' }}</span>
                   </div>
@@ -997,9 +995,28 @@ export default {
 
       if (tool.diffPreview && tool.diffPreview.filePath) {
         try {
-          console.log('[AI Chat] Calling undo for file:', tool.diffPreview.filePath)
-          const result = await fileChangeTrackerClient.undo(tool.diffPreview.filePath)
-          console.log('[AI Chat] Undo result:', result)
+          const filePath = tool.diffPreview.filePath
+          // 在调用undo之前，先清除aiModifiedFiles标记
+          // 这样当undo将文件写回磁盘并触发change事件时，不会因为aiModifiedFiles而重新加载文件
+          this.$store.commit('CLEAR_AI_MODIFIED_FILE', filePath)
+          // 标记文件正在undo操作中，防止文件监听器重新加载文件
+          this.$store.commit('SET_UNDOING_FILE', filePath)
+
+          // 优先使用previousVersion直接跳转到AI更改之前的版本
+          // 这样可以确保回退到正确的版本，而不是简单地回退一个版本
+          const previousVersion = tool.diffPreview.previousVersion
+          let result
+
+          if (previousVersion !== null && previousVersion !== undefined) {
+            console.log('[AI Chat] Reverting to previous version:', previousVersion, 'for file:', filePath)
+            result = await fileChangeTrackerClient.gotoVersion(filePath, previousVersion)
+            console.log('[AI Chat] GotoVersion result:', result)
+          } else {
+            // 如果没有previousVersion，回退到使用undo
+            console.log('[AI Chat] No previousVersion found, using undo for file:', filePath)
+            result = await fileChangeTrackerClient.undo(filePath)
+            console.log('[AI Chat] Undo result:', result)
+          }
 
           if (result.success) {
             // 标记为已拒绝
@@ -1010,12 +1027,13 @@ export default {
 
             // 通知编辑器已撤销
             bus.$emit('ai-diff-action', {
-              filePath: tool.diffPreview.filePath,
+              filePath: filePath,
               action: 'rejected'
             })
 
             // 直接从磁盘刷新文档，避免弹窗
-            const filePath = tool.diffPreview.filePath
+            // 确保aiModifiedFiles标记已被清除（双重保险）
+            this.$store.commit('CLEAR_AI_MODIFIED_FILE', filePath)
             const { tabs } = this.$store.state.editor
             const tab = tabs.find(t => isSamePathSync(t.pathname, filePath))
 
@@ -1046,6 +1064,10 @@ export default {
 
                 // 直接提交LOAD_CHANGE来刷新文档，避免弹窗
                 this.$store.commit('LOAD_CHANGE', change)
+                // 清除undo标记（延迟清除，确保文件监听器的事件都被忽略）
+                setTimeout(() => {
+                  this.$store.commit('CLEAR_UNDOING_FILE', filePath)
+                }, 1000)
                 console.log('[AI Chat] Document refreshed after undo')
               } catch (error) {
                 console.error('[AI Chat] Failed to refresh document:', error)
@@ -1077,12 +1099,15 @@ export default {
               action: 'rejected'
             })
 
+            // 确保aiModifiedFiles标记已被清除
+            const filePath = tool.diffPreview.filePath
+            this.$store.commit('CLEAR_AI_MODIFIED_FILE', filePath)
+
             const errorMessage = result.error || result.message || '撤销失败'
             console.warn('[AI Chat] Undo failed, but marked as rejected:', errorMessage)
 
             // 如果已经是最早版本，尝试从磁盘读取当前内容并刷新文档
             if (result.message === 'Already at the earliest version') {
-              const filePath = tool.diffPreview.filePath
               const { tabs } = this.$store.state.editor
               const tab = tabs.find(t => isSamePathSync(t.pathname, filePath))
 
@@ -1347,7 +1372,20 @@ export default {
       return icons[toolName] || '🔧'
     },
 
-    getToolStatusText (status) {
+    getToolStatusClass (tool) {
+      if (tool.diffAction === 'accepted') {
+        return 'completed'
+      } else if (tool.diffAction === 'rejected') {
+        return 'error'
+      }
+      return tool.status
+    },
+    getToolStatusText (tool) {
+      if (tool.diffAction === 'accepted') {
+        return this.$t('ai.diffPreview.accepted')
+      } else if (tool.diffAction === 'rejected') {
+        return this.$t('ai.diffPreview.rejected')
+      }
       const statusMap = {
         pending: this.$t('ai.toolPending'),
         running: this.$t('ai.toolRunning'),
@@ -1355,7 +1393,7 @@ export default {
         error: this.$t('ai.toolError'),
         'pending-diff': this.$t('ai.toolPending') || 'pending'
       }
-      return statusMap[status] || status
+      return statusMap[tool.status] || tool.status
     },
 
     renderMarkdown (text) {
@@ -1775,6 +1813,9 @@ export default {
   padding: 2px 6px;
   border-radius: 4px;
   font-size: 10px;
+  display: inline-flex;
+  align-items: center;
+  line-height: 1.2;
 }
 
 .tool-header .toggle-icon {
@@ -1804,31 +1845,6 @@ export default {
 .tool-status.error {
   background: #f44336;
   color: #fff;
-}
-
-/* 当有 diff 状态时，不显示 tool-status 的背景色 */
-.tool-status:has(.diff-status-accepted),
-.tool-status:has(.diff-status-rejected) {
-  background: transparent;
-  padding: 0;
-}
-
-.diff-status-accepted {
-  background: #4caf50;
-  color: #fff;
-  font-weight: 500;
-  padding: 2px 6px;
-  border-radius: 4px;
-  display: inline-block;
-}
-
-.diff-status-rejected {
-  background: #f44336;
-  color: #fff;
-  font-weight: 500;
-  padding: 2px 6px;
-  border-radius: 4px;
-  display: inline-block;
 }
 
 .tool-details {

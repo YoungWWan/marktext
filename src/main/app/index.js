@@ -40,7 +40,14 @@ class App {
     initAIService()
 
     // 初始化文件变更追踪 IPC
-    initFileChangeTrackerIPC()
+    initFileChangeTrackerIPC({
+      getWatcher: (windowId) => {
+        // watcher是windowManager的实例属性，所有窗口共享同一个watcher
+        // 只需要检查窗口是否存在即可
+        const editor = this._windowManager.get(windowId)
+        return editor ? this._windowManager._watcher : null
+      }
+    })
   }
 
   /**
